@@ -1,75 +1,154 @@
-# Context7 MCP (Docker/Compose)
+# Context7 Local Platform
 
-This setup builds a lean image for Context7 MCP with Bun and avoids running `npx` on every start.
-On this machine, the image dropped from about 144 MB (Node build) to about 130 MB (Bun build).
+This repo now contains a small local platform around Context7:
 
-## Files
+- `context7-gateway`: HTTP wrapper around `@upstash/context7-mcp`
+- `runner`: internal Bun service that talks to MCP servers and Chroma
+- `packages/mcp-client`: reusable MCP client layer
+- `packages/rag`: Chroma-backed local retrieval over mounted corpora
+- `chroma`: vector database used by the runner
 
-- `Dockerfile`: multi-stage build using Bun (`oven/bun:alpine`) for a smaller runtime footprint.
-- `docker-compose.yml`: service for MCP stdio usage.
-- `.env.example`: required and optional environment variables.
+The gateway keeps the same public MCP surface:
 
-## Build
+- `GET /health`
+- `GET /sse`
+- `POST /message?sessionId=...`
+- `POST /mcp`
+- `DELETE /mcp`
+
+## Quick Start
 
 ```bash
-cd context7_local
 cp .env.example .env
-docker compose build
+chmod +x scripts/compose.sh start-context7-mcp.sh
+./scripts/compose.sh build
+./scripts/compose.sh up
+./scripts/compose.sh health
+./scripts/compose.sh doctor
 ```
 
-## Run (manual test)
+The gateway binds to `127.0.0.1:3100` by default. The runner and Chroma stay internal to the compose network.
+
+## MCP Client Config
+
+HTTP MCP clients:
+
+```json
+{
+  "mcpServers": {
+    "context7": {
+      "url": "http://127.0.0.1:3100/mcp"
+    }
+  }
+}
+```
+
+SSE clients:
+
+```json
+{
+  "mcpServers": {
+    "context7": {
+      "url": "http://127.0.0.1:3100/sse"
+    }
+  }
+}
+```
+
+If you set `GATEWAY_AUTH_TOKEN`, send `Authorization: Bearer <token>` to `/sse`, `/message`, and `/mcp`.
+
+## Services
+
+- `context7-gateway`: public MCP entrypoint on `127.0.0.1:${GATEWAY_HOST_PORT:-3100}`
+- `runner`: internal service with `/health`, `/ready`, `/refresh`, and `/query`
+- `chroma`: internal vector database on port `8000`
+
+Container builds are defined only in:
+
+- `services/context7-gateway/Dockerfile`
+- `apps/runner/Dockerfile`
+
+## Local Development
 
 ```bash
-docker compose run --rm -T context7-mcp
+bun install
+bun test
+bun run services/context7-gateway/src/index.ts
+bun run apps/runner/src/index.ts
 ```
 
-The process should stay attached on stdio, which is expected for MCP servers.
+The runner spawns local CLI providers for `/query`. In v1:
 
-## VS Code MCP config (compose)
+- default provider is `codex`
+- `gemini` is opt-in per request
+- Gemini/Codex provider execution is intended for host development, not the current Docker runner image
 
-Use this in your MCP server config:
+The default gateway child command uses the installed `@upstash/context7-mcp` package from Bun's workspace layout. For local testing without the real server, you can override it with `STDIO_CMD_JSON`.
+
+Example:
+
+```bash
+STDIO_CMD_JSON='["bun","test/fixtures/fake-stdio-mcp.ts"]' bun run services/context7-gateway/src/index.ts
+```
+
+## Environment
+
+- `CONTEXT7_API_KEY`: required for the real Context7 server
+- `CLIENT_IP_ENCRYPTION_KEY`: optional
+- `GATEWAY_HOST_PORT`: host port mapping for the gateway, default `3100`
+- `GATEWAY_AUTH_TOKEN`: optional bearer token
+- `SESSION_TIMEOUT_MS`: idle session reap timeout, default `300000`
+- `REQUEST_TIMEOUT_MS`: per-request timeout, default `30000`
+- `CHILD_ENV_ALLOWLIST`: forwarded child env keys, default `CONTEXT7_API_KEY,CLIENT_IP_ENCRYPTION_KEY`
+- `STDIO_CMD_JSON`: optional JSON array override for the spawned child command
+- `MCP_CONTEXT7_URL`: runner-side URL for the local gateway
+- `MCP_CLOUDFLARE_URL`: optional remote MCP URL
+- `CF_API_TOKEN`: optional remote MCP bearer token
+- `CHROMA_URL`: runner-side Chroma base URL
+- `RAG_COLLECTION`: Chroma collection name
+- `RAG_TOP_K`: runner retrieval depth
+- `CODEX_CMD_JSON`: optional JSON array override for the Codex CLI command, default `["codex"]`
+- `GEMINI_CMD_JSON`: optional JSON array override for the Gemini CLI command, default `["gemini"]`
+
+## Runner Query API
+
+`POST /query` accepts:
 
 ```json
 {
-  "type": "stdio",
-  "command": "docker",
-  "args": [
-    "compose",
-    "-f",
-    "/home/sagash/project/context7_local/docker-compose.yml",
-    "run",
-    "--rm",
-    "-T",
-    "context7-mcp"
-  ],
-  "env": {
-    "CONTEXT7_API_KEY": "${input:CONTEXT7_API_KEY}",
-    "CLIENT_IP_ENCRYPTION_KEY": "${input:CLIENT_IP_ENCRYPTION_KEY}"
-  }
+  "query": "what is this project",
+  "provider": "gemini"
 }
 ```
 
-## VS Code MCP config (direct image, no compose)
+Fields:
 
-After `docker compose build`, you can also run the built image directly:
+- `query`: required string
+- `libraryName`: optional string used for the Context7 resolve tool
+- `provider`: optional, one of `codex` or `gemini`, default `codex`
+
+Successful responses include:
 
 ```json
 {
-  "type": "stdio",
-  "command": "docker",
-  "args": [
-    "run",
-    "--rm",
-    "-i",
-    "-e",
-    "CONTEXT7_API_KEY",
-    "-e",
-    "CLIENT_IP_ENCRYPTION_KEY",
-    "localhost/local/context7-mcp:1.0.31"
-  ],
-  "env": {
-    "CONTEXT7_API_KEY": "${input:CONTEXT7_API_KEY}",
-    "CLIENT_IP_ENCRYPTION_KEY": "${input:CLIENT_IP_ENCRYPTION_KEY}"
-  }
+  "query": "what is this project",
+  "provider": "gemini",
+  "llmResponse": "..."
 }
 ```
+
+If `provider: "gemini"` is explicitly requested and Gemini fails, the runner returns an error instead of falling back to Codex.
+
+## Scripts
+
+- `./scripts/compose.sh build`
+- `./scripts/compose.sh up`
+- `./scripts/compose.sh down`
+- `./scripts/compose.sh logs`
+- `./scripts/compose.sh health`
+- `./scripts/compose.sh doctor`
+- `./scripts/compose.sh mcp`
+- `./scripts/compose.sh restart`
+- `./scripts/compose.sh ps`
+
+`start-context7-mcp.sh` is kept as a deprecated shim and now delegates to `./scripts/compose.sh up`.

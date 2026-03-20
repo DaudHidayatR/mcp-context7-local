@@ -1,0 +1,103 @@
+networks:
+  egress:
+    driver: bridge
+  internal:
+    driver: bridge
+
+volumes:
+  chroma_data:
+
+services:
+  context7-gateway:
+    build:
+      context: .
+      dockerfile: services/context7-gateway/Dockerfile
+      args:
+        BUN_VERSION: ${BUN_VERSION:-1.3.9}
+    image: ${GATEWAY_IMAGE_NAME:-local/context7-gateway}:${GATEWAY_IMAGE_TAG:-1.0.31}
+    environment:
+      CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      CLIENT_IP_ENCRYPTION_KEY: ${CLIENT_IP_ENCRYPTION_KEY:-}
+      GATEWAY_PORT: "3100"
+      GATEWAY_AUTH_TOKEN: ${GATEWAY_AUTH_TOKEN:-}
+      SESSION_TIMEOUT_MS: ${SESSION_TIMEOUT_MS:-300000}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-30000}
+      CHILD_ENV_ALLOWLIST: ${CHILD_ENV_ALLOWLIST:-CONTEXT7_API_KEY,CLIENT_IP_ENCRYPTION_KEY}
+      STDIO_CMD_JSON: ${STDIO_CMD_JSON:-}
+    init: true
+    networks:
+      - internal
+      - egress
+    ports:
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-3100}:3100"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  chroma:
+    image: docker.io/chromadb/chroma:1.5.3
+    environment:
+      ANONYMIZED_TELEMETRY: "FALSE"
+      IS_PERSISTENT: "TRUE"
+    networks:
+      - internal
+    ports: []
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - chroma_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/8000 && printf \"GET /api/v2/heartbeat HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && grep -q \"200 OK\" <&3'",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+  runner:
+    build:
+      context: .
+      dockerfile: apps/runner/Dockerfile
+      args:
+        BUN_VERSION: ${BUN_VERSION:-1.3.9}
+    image: ${RUNNER_IMAGE_NAME:-local/context7-runner}:${RUNNER_IMAGE_TAG:-1.0.0}
+    environment:
+      MCP_CONTEXT7_URL: ${MCP_CONTEXT7_URL:-http://context7-gateway:3100/mcp}
+      MCP_CLOUDFLARE_URL: ${MCP_CLOUDFLARE_URL:-}
+      GATEWAY_AUTH_TOKEN: ${GATEWAY_AUTH_TOKEN:-}
+      CF_API_TOKEN: ${CF_API_TOKEN:-}
+      CHROMA_URL: ${CHROMA_URL:-http://chroma:8000}
+      RAG_COLLECTION: ${RAG_COLLECTION:-context7-local}
+      RAG_TOP_K: ${RAG_TOP_K:-5}
+      RUNNER_PORT: "3200"
+    depends_on:
+      context7-gateway:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+    networks:
+      - internal
+      - egress
+    ports: []
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./memory:/app/memory
+      - ./skills:/app/skills:ro
+      - ./schemas:/app/schemas:ro
+      - ./docs:/app/docs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3200/ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

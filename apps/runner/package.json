@@ -1,0 +1,9 @@
+{
+  "name": "@platform/runner",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@platform/mcp-client": "workspace:*",
+    "@platform/rag": "workspace:*"
+  }
+}

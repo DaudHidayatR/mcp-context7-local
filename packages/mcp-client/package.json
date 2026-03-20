@@ -1,0 +1,8 @@
+{
+  "name": "@platform/mcp-client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

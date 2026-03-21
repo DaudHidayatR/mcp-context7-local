@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 // ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ func (s *PgStore) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 			tags = EXCLUDED.tags,
 			accessed_at = NOW()
 		RETURNING version
-	`, req.Scope, req.Namespace, req.Key, req.Value, expiresAt, checksum, pqArray(req.Tags)).Scan(&version)
+	`, req.Scope, req.Namespace, req.Key, req.Value, expiresAt, checksum, pq.Array(req.Tags)).Scan(&version)
 
 	if err != nil {
 		return nil, fmt.Errorf("write query: %w", err)
@@ -179,7 +179,7 @@ func (s *PgStore) List(ctx context.Context, scope, namespace string, tags []stri
 				AND (expires_at IS NULL OR expires_at > NOW())
 				AND tags @> $3
 			ORDER BY key
-		`, scope, namespace, pqArray(tags))
+		`, scope, namespace, pq.Array(tags))
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
 			SELECT key FROM agent_memory
@@ -209,17 +209,7 @@ func (s *PgStore) List(ctx context.Context, scope, namespace string, tags []stri
 	return keys, rows.Err()
 }
 
-// pqArray converts a string slice to a Postgres array literal.
-func pqArray(ss []string) string {
-	if len(ss) == 0 {
-		return "{}"
-	}
-	escaped := make([]string, len(ss))
-	for i, s := range ss {
-		escaped[i] = `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
-	}
-	return "{" + strings.Join(escaped, ",") + "}"
-}
+
 
 // ---------------------------------------------------------------------------
 // In-memory store (for testing without Postgres)

@@ -331,3 +331,75 @@ func TestIngestEndpoint(t *testing.T) {
 		t.Fatalf("expected 2 ingested, got %d", result.Ingested)
 	}
 }
+
+func TestIngestAutoCreatesCollection(t *testing.T) {
+	// Mock ChromaDB: 404 on GET collection, 201 on POST create, 200 on upsert
+	collectionCreated := false
+	mockChroma := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// GET /api/v2/collections/new-ns → 404 (collection doesn't exist)
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/collections/") {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"error":"not found"}`)
+			return
+		}
+
+		// POST /api/v2/collections → 201 (create collection)
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/collections") {
+			collectionCreated = true
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprint(w, `{"name":"new-ns"}`)
+			return
+		}
+
+		// POST /api/v2/collections/new-ns/upsert → 200
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/upsert") {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `true`)
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockChroma.Close()
+
+	embedServer := newMockEmbedServer()
+	defer embedServer.Close()
+
+	srv := NewServer(config{
+		chromaURL: mockChroma.URL,
+		embedURL:  embedServer.URL,
+		port:      "0",
+	})
+
+	ragServer := httptest.NewServer(srv.Handler())
+	defer ragServer.Close()
+
+	body := `{
+		"documents": [
+			{"id": "d1", "content": "auto-create test", "metadata": {"source": "test"}}
+		],
+		"namespace": "new-ns"
+	}`
+
+	resp, err := http.Post(ragServer.URL+"/ingest", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var result IngestResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result.Ingested != 1 {
+		t.Fatalf("expected 1 ingested, got %d", result.Ingested)
+	}
+
+	if !collectionCreated {
+		t.Fatal("expected chromaEnsureCollection to create the collection")
+	}
+}

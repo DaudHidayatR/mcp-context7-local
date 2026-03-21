@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -168,7 +167,7 @@ func chromaQuery(ctx context.Context, client *http.Client, chromaURL, namespace 
 		return nil, fmt.Errorf("marshal chroma query: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/v1/collections/%s/query", chromaURL, namespace)
+	url := fmt.Sprintf("%s/api/v2/collections/%s/query", chromaURL, namespace)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create chroma query request: %w", err)
@@ -225,7 +224,7 @@ func chromaUpsert(ctx context.Context, client *http.Client, chromaURL, namespace
 		return fmt.Errorf("marshal chroma upsert: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/v1/collections/%s/upsert", chromaURL, namespace)
+	url := fmt.Sprintf("%s/api/v2/collections/%s/upsert", chromaURL, namespace)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create chroma upsert request: %w", err)
@@ -241,6 +240,54 @@ func chromaUpsert(ctx context.Context, client *http.Client, chromaURL, namespace
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("chroma upsert returned %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+// chromaEnsureCollection creates a ChromaDB collection if it does not already exist.
+func chromaEnsureCollection(ctx context.Context, client *http.Client, chromaURL, namespace string) error {
+	// Check if collection exists: GET /api/v2/collections/{namespace}
+	checkURL := fmt.Sprintf("%s/api/v2/collections/%s", chromaURL, namespace)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checkURL, nil)
+	if err != nil {
+		return fmt.Errorf("create check request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("check collection failed: %w", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return nil // collection already exists
+	}
+
+	// Collection does not exist — create it
+	createBody, err := json.Marshal(map[string]interface{}{
+		"name":     namespace,
+		"metadata": map[string]string{"namespace": namespace},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal create request: %w", err)
+	}
+
+	createURL := fmt.Sprintf("%s/api/v2/collections", chromaURL)
+	createReq, err := http.NewRequestWithContext(ctx, http.MethodPost, createURL, bytes.NewReader(createBody))
+	if err != nil {
+		return fmt.Errorf("create collection request: %w", err)
+	}
+	createReq.Header.Set("Content-Type", "application/json")
+
+	createResp, err := client.Do(createReq)
+	if err != nil {
+		return fmt.Errorf("create collection failed: %w", err)
+	}
+	defer createResp.Body.Close()
+
+	if createResp.StatusCode != http.StatusOK && createResp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(createResp.Body)
+		return fmt.Errorf("create collection returned %d: %s", createResp.StatusCode, string(b))
 	}
 	return nil
 }
@@ -377,6 +424,12 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		req.Namespace = "default"
 	}
 
+	// Ensure collection exists before ingest.
+	if err := chromaEnsureCollection(r.Context(), s.client, s.cfg.chromaURL, req.Namespace); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "ensure collection failed: " + err.Error()})
+		return
+	}
+
 	// Get embeddings for all documents.
 	texts := make([]string, len(req.Documents))
 	for i, d := range req.Documents {
@@ -419,13 +472,7 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	}
 }
 
-func envOrDefault(key, fallback string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	return v
-}
+
 
 // ---------------------------------------------------------------------------
 // Main
@@ -470,6 +517,4 @@ func main() {
 		log.Fatalf("[rag] shutdown error: %v", err)
 	}
 
-	_ = strconv.Itoa(0) // suppress unused import
-	_ = envOrDefault("", "")
 }

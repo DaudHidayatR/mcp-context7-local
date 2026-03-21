@@ -340,6 +340,44 @@ func TestReadNotFound(t *testing.T) {
 	}
 }
 
+func TestTagFilteringWorks(t *testing.T) {
+	store := NewMemStore()
+	srv := NewHTTPServer(store)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Write two entries with different tag sets
+	entries := []string{
+		`{"scope":"project","namespace":"app","key":"decision-1","value":{"x":1},"tags":["session","feature_dev"]}`,
+		`{"scope":"project","namespace":"app","key":"decision-2","value":{"x":2},"tags":["session","incident"]}`,
+	}
+	for _, body := range entries {
+		resp, err := http.Post(ts.URL+"/write", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+		resp.Body.Close()
+	}
+
+	// Filter by "incident" tag — should return only decision-2
+	resp, err := http.Post(ts.URL+"/list", "application/json",
+		strings.NewReader(`{"scope":"project","namespace":"app","tags":["incident"]}`))
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result ListResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if len(result.Keys) != 1 {
+		t.Fatalf("expected 1 key, got %d (keys: %v)", len(result.Keys), result.Keys)
+	}
+	if result.Keys[0] != "decision-2" {
+		t.Fatalf("expected key 'decision-2', got %q", result.Keys[0])
+	}
+}
+
 // itoa is a minimal int-to-string for test data.
 func itoa(n int) string {
 	if n == 0 {

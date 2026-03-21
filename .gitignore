@@ -7,3 +7,11 @@ dist/
 .DS_Store
 memory/data/
 memory/chroma/
+
+# Go
+services/rag/rag-service
+services/memory/memory-service
+
+# Cloudflare Worker
+worker/.wrangler/
+worker/dist/

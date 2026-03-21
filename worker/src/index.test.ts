@@ -53,21 +53,21 @@ class MockKV {
 // ---------------------------------------------------------------------------
 
 const FULL_KV_DATA: Record<string, string> = {
-  "prd:meta": JSON.stringify({
+  "test-ns:prd:meta": JSON.stringify({
     name: "MyProject",
     version: "2.0",
     team: "platform",
   }),
-  "prd:goals": JSON.stringify({
+  "test-ns:prd:goals": JSON.stringify({
     primary: "Unified MCP server",
     milestones: ["alpha", "beta", "ga"],
   }),
-  "prd:constraints": JSON.stringify({
+  "test-ns:prd:constraints": JSON.stringify({
     budget: "limited",
     timeline: "Q2 2026",
     security: "SOC2 compliant",
   }),
-  "prd:architecture": JSON.stringify({
+  "test-ns:prd:architecture": JSON.stringify({
     components: ["worker", "rag", "memory"],
     adrs: [
       { id: 1, title: "Use CF Workers" },
@@ -79,7 +79,7 @@ const FULL_KV_DATA: Record<string, string> = {
       { id: 7, title: "Bearer auth" },
     ],
   }),
-  "prd:sops": JSON.stringify({
+  "test-ns:prd:sops": JSON.stringify({
     incident_response: "Page oncall → diagnose → mitigate → postmortem",
     deployment: "CI/CD with canary",
   }),
@@ -126,8 +126,8 @@ const testCases: TestCase[] = [
     name: "feature_dev omits missing architecture silently",
     taskType: "feature_dev",
     kvData: {
-      "prd:meta": FULL_KV_DATA["prd:meta"],
-      "prd:goals": FULL_KV_DATA["prd:goals"],
+      "test-ns:prd:meta": FULL_KV_DATA["test-ns:prd:meta"],
+      "test-ns:prd:goals": FULL_KV_DATA["test-ns:prd:goals"],
       // prd:architecture is missing
     },
     expectedSections: ["meta", "goals"],
@@ -137,8 +137,8 @@ const testCases: TestCase[] = [
     name: "incident omits missing sops silently",
     taskType: "incident",
     kvData: {
-      "prd:meta": FULL_KV_DATA["prd:meta"],
-      "prd:constraints": FULL_KV_DATA["prd:constraints"],
+      "test-ns:prd:meta": FULL_KV_DATA["test-ns:prd:meta"],
+      "test-ns:prd:constraints": FULL_KV_DATA["test-ns:prd:constraints"],
       // prd:sops is missing
     },
     expectedSections: ["meta", "constraints"],
@@ -162,7 +162,7 @@ function assert(condition: boolean, message: string): void {
 async function runTest(tc: TestCase): Promise<void> {
   const kv = new MockKV(tc.kvData) as unknown as KVNamespace;
   const result = await handleGetProjectContext(
-    { task_type: tc.taskType },
+    { task_type: tc.taskType, namespace: "test-ns" },
     kv
   );
 
@@ -251,7 +251,10 @@ async function testInvalidTaskType(): Promise<void> {
   const kv = new MockKV({}) as unknown as KVNamespace;
   let threw = false;
   try {
-    await handleGetProjectContext({ task_type: "invalid" }, kv);
+    await handleGetProjectContext(
+      { task_type: "invalid", namespace: "test-ns" },
+      kv
+    );
   } catch {
     threw = true;
   }

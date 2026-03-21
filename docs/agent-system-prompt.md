@@ -15,20 +15,23 @@ At the **start of every session**, execute these steps in order:
 
 1. **Load project context:**
    ```
-   get_project_context(task_type)
+   get_project_context(task_type, namespace="{project_slug}")
    ```
    Set `task_type` to one of:
    - `"feature_dev"` — when building new features or modifying existing ones
    - `"security_review"` — when auditing, reviewing, or hardening security
    - `"incident"` — when responding to outages, bugs, or production issues
    - `"general"` — for all other tasks (research, documentation, refactoring)
+   Replace {project_slug} with your project's namespace (e.g. "vulnportal",
+   "ssdlc-sim"). Valid slugs are listed in the registry:projects KV key.
 
 2. **Load prior decisions:**
    ```
-   memory_read(scope="project", namespace="{project_slug}", key="*")
+   memory_read_all(scope="project", namespace="{project_slug}")
    ```
-   This retrieves all stored decisions, changed files, and open questions
-   from previous sessions for this project.
+   This returns all stored decisions, changed files, and open questions
+   from every previous session for this project, with age_seconds so
+   you know how recent each entry is.
 
 3. **Acknowledge context loaded** — briefly confirm what you learned from
    the project context and prior decisions before proceeding.
@@ -73,7 +76,7 @@ memory_write(
   the codebase. The code may have changed since your training data.
 - **Always save decisions** — if you made a non-trivial choice (architecture,
   library selection, approach), persist it via `memory_write`.
-- **Read before write** — always check `memory_read` for existing decisions
+- **Read before write** — always check `memory_read_all` for existing decisions
   on the same topic before making conflicting choices.
 - **Context is scoped** — each project has its own namespace. Never mix
   context from different projects.

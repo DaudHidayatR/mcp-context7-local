@@ -95,9 +95,18 @@ async function handleGetProjectContext(
   kv: KVNamespace
 ): Promise<Record<string, unknown>> {
   const taskType = args.task_type;
+  const namespace = args.namespace;
   if (!isValidTaskType(taskType)) {
     throw new Error(
       `Invalid task_type: ${String(taskType)}. Must be one of: feature_dev, security_review, incident, general`
+    );
+  }
+  if (typeof namespace !== "string") {
+    throw new Error("Missing or invalid namespace");
+  }
+  if (!(await validateNamespace(namespace, kv))) {
+    throw new Error(
+      `Unknown namespace: "${namespace}". Register it in registry:projects KV key.`
     );
   }
 
@@ -106,16 +115,16 @@ async function handleGetProjectContext(
 
   // Fetch all KV keys in parallel
   const entries = await Promise.all(
-    kvKeys.map(async (key) => {
-      const value = await kv.get(key, "text");
-      return { key, value };
+    kvKeys.map(async (suffix) => {
+      const value = await kv.get(`${namespace}:${suffix}`, "text");
+      return { suffix, value };
     })
   );
 
-  for (const { key, value } of entries) {
+  for (const { suffix, value } of entries) {
     if (value === null) continue; // Silently omit missing sections
 
-    const sectionName = KV_KEY_TO_SECTION[key];
+    const sectionName = KV_KEY_TO_SECTION[suffix];
     if (!sectionName) continue;
 
     try {
@@ -127,6 +136,20 @@ async function handleGetProjectContext(
   }
 
   return { project_context: truncateContext(projectContext) };
+}
+
+async function validateNamespace(
+  namespace: string,
+  kv: KVNamespace
+): Promise<boolean> {
+  const raw = await kv.get("registry:projects", "text");
+  if (raw === null) return true;
+  try {
+    const projects: string[] = JSON.parse(raw);
+    return Array.isArray(projects) && projects.includes(namespace);
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +206,10 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
     return proxyToVps(`${env.VPS_MEMORY_URL}/read`, args);
   },
 
+  memory_read_all: async (args, env) => {
+    return proxyToVps(`${env.VPS_MEMORY_URL}/read-all`, args);
+  },
+
   memory_write: async (args, env) => {
     return proxyToVps(`${env.VPS_MEMORY_URL}/write`, args);
   },
@@ -196,12 +223,32 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
 // Auth
 // ---------------------------------------------------------------------------
 
-function validateAuth(request: Request, secret: string): boolean {
+async function validateAuth(request: Request, secret: string): Promise<boolean> {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader) return false;
-
-  const [scheme, token] = authHeader.split(" ");
-  return scheme === "Bearer" && token === secret;
+  const parts = authHeader.split(" ");
+  if (parts.length !== 2 || parts[0] !== "Bearer") return false;
+  const token = parts[1];
+  const enc = new TextEncoder();
+  const tokenBytes = enc.encode(token);
+  const secretBytes = enc.encode(secret);
+  if (tokenBytes.length !== secretBytes.length) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    secretBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const [sigA, sigB] = await Promise.all([
+    crypto.subtle.sign("HMAC", key, tokenBytes),
+    crypto.subtle.sign("HMAC", key, secretBytes),
+  ]);
+  const a = new Uint8Array(sigA);
+  const b = new Uint8Array(sigB);
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +322,7 @@ export default {
     }
 
     // All other endpoints require auth
-    if (!validateAuth(request, env.SECRET)) {
+    if (!(await validateAuth(request, env.SECRET))) {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
 

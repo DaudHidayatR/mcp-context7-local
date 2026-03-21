@@ -35,9 +35,13 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     expires_at  TIMESTAMPTZ,
     created_by  TEXT,
     accessed_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     checksum    TEXT,
     tags        TEXT[]
 );
+
+ALTER TABLE agent_memory
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_memory_scope_ns_key
     ON agent_memory (scope, namespace, key);
@@ -50,8 +54,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_memory_scope_ns_key
 // Store is the persistence interface for agent memory.
 type Store interface {
 	Read(ctx context.Context, scope, namespace, key string) (*ReadResult, error)
+	ReadAll(ctx context.Context, scope, namespace string) ([]KeyValue, error)
 	Write(ctx context.Context, req WriteRequest) (*WriteResult, error)
 	List(ctx context.Context, scope, namespace string, tags []string) ([]string, error)
+}
+
+// KeyValue holds a stored entry returned by bulk reads.
+type KeyValue struct {
+	Key        string          `json:"key"`
+	Value      json.RawMessage `json:"value"`
+	AgeSeconds int             `json:"age_seconds"`
+	Version    int             `json:"version"`
 }
 
 // ReadResult holds data returned by a read operation.
@@ -119,7 +132,7 @@ func (s *PgStore) Read(ctx context.Context, scope, namespace, key string) (*Read
 		SET accessed_at = NOW()
 		WHERE scope = $1 AND namespace = $2 AND key = $3
 			AND (expires_at IS NULL OR expires_at > NOW())
-		RETURNING value, version, COALESCE(accessed_at, NOW())
+		RETURNING value, version, created_at
 	`, scope, namespace, key).Scan(&value, &version, &createdAt)
 
 	if err == sql.ErrNoRows {
@@ -136,6 +149,44 @@ func (s *PgStore) Read(ctx context.Context, scope, namespace, key string) (*Read
 		AgeSeconds: age,
 		Version:    version,
 	}, nil
+}
+
+func (s *PgStore) ReadAll(ctx context.Context, scope, namespace string) ([]KeyValue, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		UPDATE agent_memory
+		SET accessed_at = NOW()
+		WHERE scope = $1 AND namespace = $2
+			AND (expires_at IS NULL OR expires_at > NOW())
+		RETURNING key, value, version, created_at
+	`, scope, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("read all query: %w", err)
+	}
+	defer rows.Close()
+
+	entries := []KeyValue{}
+	for rows.Next() {
+		var key string
+		var value json.RawMessage
+		var version int
+		var createdAt time.Time
+		if err := rows.Scan(&key, &value, &version, &createdAt); err != nil {
+			return nil, fmt.Errorf("scan read all row: %w", err)
+		}
+
+		entries = append(entries, KeyValue{
+			Key:        key,
+			Value:      value,
+			AgeSeconds: int(time.Since(createdAt).Seconds()),
+			Version:    version,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read all rows: %w", err)
+	}
+
+	return entries, nil
 }
 
 func (s *PgStore) Write(ctx context.Context, req WriteRequest) (*WriteResult, error) {
@@ -209,8 +260,6 @@ func (s *PgStore) List(ctx context.Context, scope, namespace string, tags []stri
 	return keys, rows.Err()
 }
 
-
-
 // ---------------------------------------------------------------------------
 // In-memory store (for testing without Postgres)
 // ---------------------------------------------------------------------------
@@ -272,15 +321,47 @@ func (s *MemStore) Write(_ context.Context, req WriteRequest) (*WriteResult, err
 		expiresAt = &t
 	}
 
+	var createdAt time.Time
+	if existing, ok := s.data[k]; ok {
+		createdAt = existing.WrittenAt
+	} else {
+		createdAt = time.Now()
+	}
+
 	s.data[k] = &memEntry{
 		Value:     req.Value,
 		Version:   version,
 		ExpiresAt: expiresAt,
 		Tags:      req.Tags,
-		WrittenAt: time.Now(),
+		WrittenAt: createdAt,
 	}
 
 	return &WriteResult{OK: true, VersionID: version}, nil
+}
+
+func (s *MemStore) ReadAll(_ context.Context, scope, namespace string) ([]KeyValue, error) {
+	prefix := scope + "::" + namespace + "::"
+	entries := []KeyValue{}
+
+	for k, entry := range s.data {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+
+		if entry.ExpiresAt != nil && entry.ExpiresAt.Before(time.Now()) {
+			delete(s.data, k)
+			continue
+		}
+
+		entries = append(entries, KeyValue{
+			Key:        strings.TrimPrefix(k, prefix),
+			Value:      entry.Value,
+			AgeSeconds: int(time.Since(entry.WrittenAt).Seconds()),
+			Version:    entry.Version,
+		})
+	}
+
+	return entries, nil
 }
 
 func (s *MemStore) List(_ context.Context, scope, namespace string, tags []string) ([]string, error) {
@@ -345,6 +426,17 @@ type ReadRequest struct {
 	Key       string `json:"key"`
 }
 
+// ReadAllRequest is the JSON body for POST /read-all.
+type ReadAllRequest struct {
+	Scope     string `json:"scope"`
+	Namespace string `json:"namespace"`
+}
+
+// ReadAllResponse is the JSON response for POST /read-all.
+type ReadAllResponse struct {
+	Entries []KeyValue `json:"entries"`
+}
+
 // ListRequest is the JSON body for POST /list.
 type ListRequest struct {
 	Scope     string   `json:"scope"`
@@ -385,6 +477,32 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleReadAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req ReadAllRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+
+	if req.Scope == "" || req.Namespace == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "scope and namespace are required"})
+		return
+	}
+
+	entries, err := s.store.ReadAll(r.Context(), req.Scope, req.Namespace)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ReadAllResponse{Entries: entries})
 }
 
 func (s *Server) handleWrite(w http.ResponseWriter, r *http.Request) {
@@ -449,6 +567,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/read", s.handleRead)
+	mux.HandleFunc("/read-all", s.handleReadAll)
 	mux.HandleFunc("/write", s.handleWrite)
 	mux.HandleFunc("/list", s.handleList)
 	return mux

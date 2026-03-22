@@ -48,6 +48,12 @@ log() {
   echo "[compose.sh] $*"
 }
 
+print_doctor_result() {
+  local label="$1"
+  local status="$2"
+  echo "  ${label}: ${status}"
+}
+
 compose() {
   $COMPOSE -f "$COMPOSE_FILE" "$@"
 }
@@ -84,6 +90,106 @@ service_health() {
   local status
   status=$($ENGINE inspect --format "{{.State.Health.Status}}" "$container" 2>/dev/null || echo "running")
   echo "  $service ($container): $status"
+}
+
+doctor_mcp_check() {
+  local label="$1"
+  local endpoint="$2"
+  local expected_tool="$3"
+  local use_auth="${4:-0}"
+  local tmp_headers
+  local tmp_body
+  local init_status
+  local session_id
+  local initialized_status
+  local tools_status
+  local -a curl_auth_args=()
+
+  tmp_headers="$(mktemp)"
+  tmp_body="$(mktemp)"
+  trap 'rm -f "$tmp_headers" "$tmp_body"' RETURN
+
+  if [[ "$use_auth" == "1" && ${#auth_args[@]} -gt 0 ]]; then
+    curl_auth_args=("${auth_args[@]}")
+  fi
+
+  if ! curl -sS --max-time 12 -D "$tmp_headers" -o "$tmp_body" \
+    -X POST "$endpoint" \
+    -H 'Accept: application/json, text/event-stream' \
+    -H 'Content-Type: application/json' \
+    "${curl_auth_args[@]}" \
+    --data "$init_body"; then
+    print_doctor_result "${label} /mcp" "FAIL"
+    echo "Doctor ${label} initialize request failed" >&2
+    return 1
+  fi
+
+  init_status="$(awk 'NR==1 { print $2 }' "$tmp_headers")"
+  if [[ "$init_status" != "200" ]]; then
+    print_doctor_result "${label} /mcp" "FAIL"
+    echo "Doctor ${label} initialize failed with HTTP ${init_status}" >&2
+    sed -n '1,20p' "$tmp_headers" >&2
+    sed -n '1,40p' "$tmp_body" >&2
+    return 1
+  fi
+
+  session_id="$(awk 'BEGIN { IGNORECASE = 1 } /^Mcp-Session-Id:/ { gsub("\r", "", $2); print $2; exit }' "$tmp_headers")"
+  if [[ -z "$session_id" ]]; then
+    print_doctor_result "${label} /mcp" "FAIL"
+    echo "Doctor ${label} initialize failed: missing Mcp-Session-Id" >&2
+    sed -n '1,20p' "$tmp_headers" >&2
+    return 1
+  fi
+
+  if ! initialized_status="$(
+    curl -sS --max-time 12 -o /dev/null -w '%{http_code}' \
+      -X POST "$endpoint" \
+      -H 'Accept: application/json, text/event-stream' \
+      -H 'Content-Type: application/json' \
+      -H "Mcp-Session-Id: ${session_id}" \
+      "${curl_auth_args[@]}" \
+      --data "$initialized_body"
+  )"; then
+    print_doctor_result "${label} /mcp" "FAIL"
+    echo "Doctor ${label} initialized notification request failed" >&2
+    return 1
+  fi
+
+  if [[ "$initialized_status" != "202" ]]; then
+    print_doctor_result "${label} /mcp" "FAIL"
+    echo "Doctor ${label} initialized notification failed with HTTP ${initialized_status}" >&2
+    return 1
+  fi
+
+  if ! curl -sS --max-time 12 -D "$tmp_headers" -o "$tmp_body" \
+    -X POST "$endpoint" \
+    -H 'Accept: application/json, text/event-stream' \
+    -H 'Content-Type: application/json' \
+    -H "Mcp-Session-Id: ${session_id}" \
+    "${curl_auth_args[@]}" \
+    --data "$tools_body"; then
+    print_doctor_result "${label} /mcp" "FAIL"
+    echo "Doctor ${label} tools/list request failed" >&2
+    return 1
+  fi
+
+  tools_status="$(awk 'NR==1 { print $2 }' "$tmp_headers")"
+  if [[ "$tools_status" != "200" ]]; then
+    print_doctor_result "${label} /mcp" "FAIL"
+    echo "Doctor ${label} tools/list failed with HTTP ${tools_status}" >&2
+    sed -n '1,20p' "$tmp_headers" >&2
+    sed -n '1,60p' "$tmp_body" >&2
+    return 1
+  fi
+
+  if ! grep -q "$expected_tool" "$tmp_body"; then
+    print_doctor_result "${label} /mcp" "FAIL"
+    echo "Doctor ${label} tools/list failed: expected tool '${expected_tool}' was not returned" >&2
+    sed -n '1,60p' "$tmp_body" >&2
+    return 1
+  fi
+
+  print_doctor_result "${label} /mcp" "PASS"
 }
 
 CMD="${1:-help}"
@@ -128,10 +234,9 @@ case "$CMD" in
     ensure_env
     load_env
     gateway_port="${GATEWAY_HOST_PORT:-3100}"
+    runner_port="${RUNNER_HOST_PORT:-3200}"
     gateway_url="http://127.0.0.1:${gateway_port}"
-    tmp_headers="$(mktemp)"
-    tmp_body="$(mktemp)"
-    trap 'rm -f "$tmp_headers" "$tmp_body"' EXIT
+    runner_url="http://127.0.0.1:${runner_port}"
 
     auth_args=()
     if [[ -n "${GATEWAY_AUTH_TOKEN:-}" ]]; then
@@ -142,69 +247,18 @@ case "$CMD" in
     initialized_body='{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}'
     tools_body='{"jsonrpc":"2.0","id":"doctor-tools","method":"tools/list","params":{}}'
 
-    log "Doctor: /health"
-    curl -fsS "${auth_args[@]}" "${gateway_url}/health" >/dev/null
-
-    log "Doctor: initialize"
-    curl -sS --max-time 12 -D "$tmp_headers" -o "$tmp_body" \
-      -X POST "${gateway_url}/mcp" \
-      -H 'Accept: application/json, text/event-stream' \
-      -H 'Content-Type: application/json' \
-      "${auth_args[@]}" \
-      --data "$init_body"
-
-    init_status="$(awk 'NR==1 { print $2 }' "$tmp_headers")"
-    if [[ "$init_status" != "200" ]]; then
-      echo "Doctor initialize failed with HTTP ${init_status}" >&2
-      sed -n '1,20p' "$tmp_headers" >&2
-      sed -n '1,40p' "$tmp_body" >&2
+    log "Doctor checks"
+    if curl -fsS "${auth_args[@]}" "${gateway_url}/health" >/dev/null; then
+      print_doctor_result "gateway /health" "PASS"
+    else
+      print_doctor_result "gateway /health" "FAIL"
+      echo "Gateway health check failed on 127.0.0.1:${gateway_port}" >&2
       exit 1
     fi
 
-    session_id="$(awk 'BEGIN { IGNORECASE = 1 } /^Mcp-Session-Id:/ { gsub("\r", "", $2); print $2; exit }' "$tmp_headers")"
-    if [[ -z "$session_id" ]]; then
-      echo "Doctor initialize failed: missing Mcp-Session-Id" >&2
-      sed -n '1,20p' "$tmp_headers" >&2
-      exit 1
-    fi
-
-    log "Doctor: notifications/initialized"
-    initialized_status="$(
-      curl -sS --max-time 12 -o /dev/null -w '%{http_code}' \
-        -X POST "${gateway_url}/mcp" \
-        -H 'Accept: application/json, text/event-stream' \
-        -H 'Content-Type: application/json' \
-        -H "Mcp-Session-Id: ${session_id}" \
-        "${auth_args[@]}" \
-        --data "$initialized_body"
-    )"
-    if [[ "$initialized_status" != "202" ]]; then
-      echo "Doctor initialized notification failed with HTTP ${initialized_status}" >&2
-      exit 1
-    fi
-
-    log "Doctor: tools/list"
-    curl -sS --max-time 12 -D "$tmp_headers" -o "$tmp_body" \
-      -X POST "${gateway_url}/mcp" \
-      -H 'Accept: application/json, text/event-stream' \
-      -H 'Content-Type: application/json' \
-      -H "Mcp-Session-Id: ${session_id}" \
-      "${auth_args[@]}" \
-      --data "$tools_body"
-
-    tools_status="$(awk 'NR==1 { print $2 }' "$tmp_headers")"
-    if [[ "$tools_status" != "200" ]]; then
-      echo "Doctor tools/list failed with HTTP ${tools_status}" >&2
-      sed -n '1,20p' "$tmp_headers" >&2
-      sed -n '1,60p' "$tmp_body" >&2
-      exit 1
-    fi
-
-    if ! grep -q 'resolve-library-id' "$tmp_body"; then
-      echo "Doctor tools/list failed: expected tool payload was not returned" >&2
-      sed -n '1,60p' "$tmp_body" >&2
-      exit 1
-    fi
+    doctor_mcp_check "gateway" "${gateway_url}/mcp" "resolve-library-id" 1
+    log "Doctor: runner MCP endpoint"
+    doctor_mcp_check "runner" "${runner_url}/mcp" "rag_search" 0
 
     log "Doctor passed"
     ;;
@@ -241,7 +295,7 @@ Commands:
   down               Stop and remove platform containers
   logs [service]     Follow logs (default: context7-gateway)
   health             Check service health plus gateway HTTP health
-  doctor             Probe /health, initialize, initialized, and tools/list
+  doctor             Probe gateway /health plus gateway and runner MCP endpoints
   mcp                Attach Context7 stdio directly for testing
   restart [service]  Restart services
   ps                 List services

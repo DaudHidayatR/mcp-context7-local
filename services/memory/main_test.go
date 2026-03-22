@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,18 +14,37 @@ import (
 // Tests — Memory Service
 // ---------------------------------------------------------------------------
 
+func newTestListener(t *testing.T) net.Listener {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("cannot bind test listener: %v", err)
+	}
+	return l
+}
+
+func newTestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+	ts := &httptest.Server{
+		Listener: newTestListener(t),
+		Config:   &http.Server{Handler: handler},
+	}
+	ts.Start()
+	return ts
+}
+
 func TestWriteAndRead(t *testing.T) {
 	store := NewMemStore()
 	srv := NewHTTPServer(store)
-	ts := httptest.NewServer(srv.Handler())
+	ts := newTestServer(t, srv.Handler())
 	defer ts.Close()
 
 	tests := []struct {
-		name         string
-		writeBody    string
-		readBody     string
-		wantVersion  int
-		wantFound    bool
+		name        string
+		writeBody   string
+		readBody    string
+		wantVersion int
+		wantFound   bool
 	}{
 		{
 			name:        "first write creates version 1",
@@ -79,7 +99,7 @@ func TestWriteAndRead(t *testing.T) {
 func TestUpsertIncrementsVersion(t *testing.T) {
 	store := NewMemStore()
 	srv := NewHTTPServer(store)
-	ts := httptest.NewServer(srv.Handler())
+	ts := newTestServer(t, srv.Handler())
 	defer ts.Close()
 
 	tests := []struct {
@@ -108,7 +128,7 @@ func TestUpsertIncrementsVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testStore := NewMemStore()
 			testSrv := NewHTTPServer(testStore)
-			testTS := httptest.NewServer(testSrv.Handler())
+			testTS := newTestServer(t, testSrv.Handler())
 			defer testTS.Close()
 
 			var lastVersion int
@@ -166,8 +186,8 @@ func TestExpiredRowsNotReturnedByList(t *testing.T) {
 		},
 		{
 			name:       "expired entry is not listed",
-			ttl:        1,        // 1 second TTL
-			sleepMs:    1100,     // sleep 1.1 seconds
+			ttl:        1,    // 1 second TTL
+			sleepMs:    1100, // sleep 1.1 seconds
 			wantKeys:   0,
 			wantInList: false,
 		},
@@ -177,7 +197,7 @@ func TestExpiredRowsNotReturnedByList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := NewMemStore()
 			srv := NewHTTPServer(store)
-			ts := httptest.NewServer(srv.Handler())
+			ts := newTestServer(t, srv.Handler())
 			defer ts.Close()
 
 			// Write an entry with TTL
@@ -219,7 +239,7 @@ func TestExpiredRowsNotReturnedByList(t *testing.T) {
 func TestExpiredRowsNotReturnedByRead(t *testing.T) {
 	store := NewMemStore()
 	srv := NewHTTPServer(store)
-	ts := httptest.NewServer(srv.Handler())
+	ts := newTestServer(t, srv.Handler())
 	defer ts.Close()
 
 	// Write with 1-second TTL
@@ -245,7 +265,7 @@ func TestExpiredRowsNotReturnedByRead(t *testing.T) {
 func TestListWithTags(t *testing.T) {
 	store := NewMemStore()
 	srv := NewHTTPServer(store)
-	ts := httptest.NewServer(srv.Handler())
+	ts := newTestServer(t, srv.Handler())
 	defer ts.Close()
 
 	// Write entries with different tags
@@ -303,7 +323,7 @@ func TestListWithTags(t *testing.T) {
 func TestHealthEndpoint(t *testing.T) {
 	store := NewMemStore()
 	srv := NewHTTPServer(store)
-	ts := httptest.NewServer(srv.Handler())
+	ts := newTestServer(t, srv.Handler())
 	defer ts.Close()
 
 	resp, err := http.Get(ts.URL + "/health")
@@ -326,7 +346,7 @@ func TestHealthEndpoint(t *testing.T) {
 func TestReadNotFound(t *testing.T) {
 	store := NewMemStore()
 	srv := NewHTTPServer(store)
-	ts := httptest.NewServer(srv.Handler())
+	ts := newTestServer(t, srv.Handler())
 	defer ts.Close()
 
 	resp, _ := http.Post(ts.URL+"/read", "application/json",
@@ -343,7 +363,7 @@ func TestReadNotFound(t *testing.T) {
 func TestTagFilteringWorks(t *testing.T) {
 	store := NewMemStore()
 	srv := NewHTTPServer(store)
-	ts := httptest.NewServer(srv.Handler())
+	ts := newTestServer(t, srv.Handler())
 	defer ts.Close()
 
 	// Write two entries with different tag sets

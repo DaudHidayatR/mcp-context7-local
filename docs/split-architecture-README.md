@@ -89,18 +89,15 @@ curl http://localhost:8082/health   # Memory service
 ### Run Go Tests
 
 ```bash
-# RAG service tests
-cd services/rag && go test -v ./...
-
-# Memory service tests (uses in-memory store, no Postgres needed)
-cd services/memory && go test -v ./...
+# Run Go service tests with writable temporary caches
+bun run test:go
 ```
 
 ### Run Worker Tests
 
 ```bash
-# Worker tests (no npm deps needed, just TypeScript runtime)
-cd worker && npx tsx src/index.test.ts
+# Worker tests with correct failure detection
+bun run test:worker
 ```
 
 ### Develop Worker Locally

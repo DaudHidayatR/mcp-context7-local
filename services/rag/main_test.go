@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,9 +14,42 @@ import (
 // Mock ChromaDB server
 // ---------------------------------------------------------------------------
 
-func newMockChromaDB(withResults bool) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func newTestListener(t *testing.T) net.Listener {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("cannot bind test listener: %v", err)
+	}
+	return l
+}
+
+func newTestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+	ts := &httptest.Server{
+		Listener: newTestListener(t),
+		Config:   &http.Server{Handler: handler},
+	}
+	ts.Start()
+	return ts
+}
+
+func newMockChromaDB(t *testing.T, withResults bool) *httptest.Server {
+	return newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		// Handle collection existence check
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/collections/") {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{"name":"test-ns"}`)
+			return
+		}
+
+		// Handle collection creation
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/collections") {
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprint(w, `{"name":"test-ns"}`)
+			return
+		}
 
 		// Handle collection query
 		if strings.Contains(r.URL.Path, "/query") {
@@ -58,8 +92,8 @@ func newMockChromaDB(withResults bool) *httptest.Server {
 // Mock Embedding server
 // ---------------------------------------------------------------------------
 
-func newMockEmbedServer() *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func newMockEmbedServer(t *testing.T) *httptest.Server {
+	return newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/embeddings" {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -127,10 +161,10 @@ func TestSearchEndpoint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			chromaServer := newMockChromaDB(tt.chromaResults)
+			chromaServer := newMockChromaDB(t, tt.chromaResults)
 			defer chromaServer.Close()
 
-			embedServer := newMockEmbedServer()
+			embedServer := newMockEmbedServer(t)
 			defer embedServer.Close()
 
 			srv := NewServer(config{
@@ -139,7 +173,7 @@ func TestSearchEndpoint(t *testing.T) {
 				port:      "0",
 			})
 
-			ragServer := httptest.NewServer(srv.Handler())
+			ragServer := newTestServer(t, srv.Handler())
 			defer ragServer.Close()
 
 			resp, err := http.Post(ragServer.URL+"/search", "application/json", strings.NewReader(tt.body))
@@ -188,10 +222,10 @@ func TestSearchEndpoint(t *testing.T) {
 func TestSearchReturnsEmptyNotError(t *testing.T) {
 	// This is the specific test required by the spec:
 	// "RAG service: /search returns empty array (not error) when ChromaDB has no results"
-	chromaServer := newMockChromaDB(false)
+	chromaServer := newMockChromaDB(t, false)
 	defer chromaServer.Close()
 
-	embedServer := newMockEmbedServer()
+	embedServer := newMockEmbedServer(t)
 	defer embedServer.Close()
 
 	srv := NewServer(config{
@@ -200,7 +234,7 @@ func TestSearchReturnsEmptyNotError(t *testing.T) {
 		port:      "0",
 	})
 
-	ragServer := httptest.NewServer(srv.Handler())
+	ragServer := newTestServer(t, srv.Handler())
 	defer ragServer.Close()
 
 	resp, err := http.Post(
@@ -230,13 +264,13 @@ func TestSearchReturnsEmptyNotError(t *testing.T) {
 
 func TestSearchChromaError(t *testing.T) {
 	// When ChromaDB is unreachable / errors, /search still returns empty array.
-	badChroma := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	badChroma := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprint(w, `{"error":"internal"}`)
 	}))
 	defer badChroma.Close()
 
-	embedServer := newMockEmbedServer()
+	embedServer := newMockEmbedServer(t)
 	defer embedServer.Close()
 
 	srv := NewServer(config{
@@ -245,7 +279,7 @@ func TestSearchChromaError(t *testing.T) {
 		port:      "0",
 	})
 
-	ragServer := httptest.NewServer(srv.Handler())
+	ragServer := newTestServer(t, srv.Handler())
 	defer ragServer.Close()
 
 	resp, err := http.Post(
@@ -271,7 +305,7 @@ func TestSearchChromaError(t *testing.T) {
 
 func TestHealthEndpoint(t *testing.T) {
 	srv := NewServer(config{port: "0"})
-	ragServer := httptest.NewServer(srv.Handler())
+	ragServer := newTestServer(t, srv.Handler())
 	defer ragServer.Close()
 
 	resp, err := http.Get(ragServer.URL + "/health")
@@ -292,10 +326,10 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestIngestEndpoint(t *testing.T) {
-	chromaServer := newMockChromaDB(false)
+	chromaServer := newMockChromaDB(t, false)
 	defer chromaServer.Close()
 
-	embedServer := newMockEmbedServer()
+	embedServer := newMockEmbedServer(t)
 	defer embedServer.Close()
 
 	srv := NewServer(config{
@@ -304,7 +338,7 @@ func TestIngestEndpoint(t *testing.T) {
 		port:      "0",
 	})
 
-	ragServer := httptest.NewServer(srv.Handler())
+	ragServer := newTestServer(t, srv.Handler())
 	defer ragServer.Close()
 
 	body := `{
@@ -335,7 +369,7 @@ func TestIngestEndpoint(t *testing.T) {
 func TestIngestAutoCreatesCollection(t *testing.T) {
 	// Mock ChromaDB: 404 on GET collection, 201 on POST create, 200 on upsert
 	collectionCreated := false
-	mockChroma := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mockChroma := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		// GET /api/v2/collections/new-ns → 404 (collection doesn't exist)
@@ -364,7 +398,7 @@ func TestIngestAutoCreatesCollection(t *testing.T) {
 	}))
 	defer mockChroma.Close()
 
-	embedServer := newMockEmbedServer()
+	embedServer := newMockEmbedServer(t)
 	defer embedServer.Close()
 
 	srv := NewServer(config{
@@ -373,7 +407,7 @@ func TestIngestAutoCreatesCollection(t *testing.T) {
 		port:      "0",
 	})
 
-	ragServer := httptest.NewServer(srv.Handler())
+	ragServer := newTestServer(t, srv.Handler())
 	defer ragServer.Close()
 
 	body := `{

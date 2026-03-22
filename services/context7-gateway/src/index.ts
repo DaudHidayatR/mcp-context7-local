@@ -1,5 +1,6 @@
 import { loadConfig, type GatewayConfig } from "./config";
 import { createGatewayFetch, internalServerErrorResponse } from "./http";
+import { spawn } from "bun";
 import { SessionManager } from "./session-manager";
 
 export interface GatewayHandle {
@@ -21,8 +22,9 @@ export interface GatewayApp {
 export function createGatewayApp(
   config = loadConfig(Bun.env),
   env: Record<string, string | undefined> = Bun.env,
+  spawnFn: typeof spawn = spawn,
 ): GatewayApp {
-  const manager = new SessionManager(config, env);
+  const manager = new SessionManager(config, env, spawnFn);
   const startedAt = Date.now();
 
   return {
@@ -37,8 +39,9 @@ export function createGatewayApp(
 export function createGatewayServer(
   config = loadConfig(Bun.env),
   env: Record<string, string | undefined> = Bun.env,
+  spawnFn: typeof spawn = spawn,
 ): GatewayHandle {
-  const app = createGatewayApp(config, env);
+  const app = createGatewayApp(config, env, spawnFn);
 
   const server = Bun.serve({
     port: config.port,

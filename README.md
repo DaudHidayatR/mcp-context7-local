@@ -36,12 +36,33 @@ HTTP MCP clients:
 ```json
 {
   "mcpServers": {
-    "context7": {
-      "url": "http://127.0.0.1:3100/mcp"
+    "mcp-context7-local": {
+      "url": "http://127.0.0.1:3200/mcp"
     }
   }
 }
 ```
+
+This is the default agent-facing endpoint for the local Docker stack. The
+runner exposes the project-aware MCP tools:
+`rag_search`, `memory_read`, `memory_read_all`, `memory_write`, and
+`get_project_context`.
+
+If you want the remote deployment instead, use the same server name with your
+Cloudflare Worker URL:
+
+```json
+{
+  "mcpServers": {
+    "mcp-context7-local": {
+      "url": "https://<your-worker>.workers.dev"
+    }
+  }
+}
+```
+
+The gateway remains available separately on `http://127.0.0.1:3100/mcp` for the
+Context7 server surface.
 
 SSE clients:
 
@@ -73,6 +94,7 @@ Container builds are defined only in:
 ```bash
 bun install
 bun test
+bun run test:worker
 bun run services/context7-gateway/src/index.ts
 bun run apps/runner/src/index.ts
 ```
@@ -141,6 +163,9 @@ If `provider: "gemini"` is explicitly requested and Gemini fails, the runner ret
 
 ## Scripts
 
+- `bun run test:worker`
+- `bun run test:go`
+- `bun run test:all`
 - `./scripts/compose.sh build`
 - `./scripts/compose.sh up`
 - `./scripts/compose.sh down`

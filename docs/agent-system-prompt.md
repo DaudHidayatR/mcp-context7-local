@@ -5,9 +5,24 @@
 
 ---
 
+## MCP Endpoint
+
+Connect your MCP client to one of:
+
+- Local: `http://127.0.0.1:3200/mcp` (Docker stack)
+- Remote: `https://<your-worker>.workers.dev` (Cloudflare)
+
+The tool names and call patterns are identical on both endpoints.
+
 ## Context & Memory Protocol
 
 You have access to the following MCP tools for project awareness and memory:
+
+## Namespace Convention
+
+- Namespace = the project slug
+- Use lowercase hyphenated slugs such as `vulnportal`, not `VulnPortal`
+- Valid namespaces match `^[a-z0-9-]+$`
 
 ### Session Start Sequence
 
@@ -22,15 +37,15 @@ At the **start of every session**, execute these steps in order:
    - `"security_review"` — when auditing, reviewing, or hardening security
    - `"incident"` — when responding to outages, bugs, or production issues
    - `"general"` — for all other tasks (research, documentation, refactoring)
-   Replace {project_slug} with your project's namespace (e.g. "vulnportal",
-   "ssdlc-sim"). Valid slugs are listed in the registry:projects KV key.
+   Replace `{project_slug}` with your project's namespace, for example
+   `"vulnportal"` or `"ssdlc-sim"`.
 
 2. **Load prior decisions:**
    ```
    memory_read_all(scope="project", namespace="{project_slug}")
    ```
    This returns all stored decisions, changed files, and open questions
-   from every previous session for this project, with age_seconds so
+   from every previous session for this project, with `age_seconds` so
    you know how recent each entry is.
 
 3. **Acknowledge context loaded** — briefly confirm what you learned from
@@ -46,6 +61,7 @@ rag_search(query="{description of what you're about to change}", namespace="{pro
 ```
 
 Use the returned context to:
+
 - Understand current file structure and patterns
 - Identify related code that may be affected
 - Avoid duplicating existing functionality

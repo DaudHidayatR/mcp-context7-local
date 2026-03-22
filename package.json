@@ -13,6 +13,11 @@
     "start": "bun run services/context7-gateway/src/index.ts",
     "start:runner": "bun run apps/runner/src/index.ts",
     "test": "bun test",
+    "test:worker": "bash scripts/test-worker.sh",
+    "test:memory": "cd services/memory && bash ../../scripts/go-test.sh ./... -v -count=1",
+    "test:rag": "cd services/rag && bash ../../scripts/go-test.sh ./... -v -count=1",
+    "test:go": "bun run test:memory && bun run test:rag",
+    "test:all": "bun test --timeout 15000 && bun run test:go && bun run test:worker",
     "typecheck": "./node_modules/.bin/tsc --noEmit"
   },
   "devDependencies": {
@@ -20,6 +25,7 @@
     "typescript": "5.7.3"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@openai/agents": "^0.7.2",
     "zod": "^4.3.6"
   }

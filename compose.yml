@@ -87,6 +87,7 @@ services:
       RAG_COLLECTION: ${RAG_COLLECTION:-context7-local}
       RAG_TOP_K: ${RAG_TOP_K:-5}
       RUNNER_PORT: "3200"
+      VPS_MEMORY_URL: ${VPS_MEMORY_URL:-http://memory-service:8082}
     depends_on:
       context7-gateway:
         condition: service_healthy
@@ -95,7 +96,9 @@ services:
     networks:
       - internal
       - egress
-    ports: []
+      - split-arch
+    ports:
+      - "127.0.0.1:${RUNNER_HOST_PORT:-3200}:3200"
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

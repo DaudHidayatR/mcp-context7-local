@@ -103,6 +103,8 @@ function normalizeCollectionName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
 }
 
+type ChromaCollection = Awaited<ReturnType<ChromaClient["getOrCreateCollection"]>>;
+
 async function collectTextFiles(dir: string, rootDir = dir): Promise<RagDocument[]> {
   let entries;
   try {
@@ -143,7 +145,7 @@ async function collectTextFiles(dir: string, rootDir = dir): Promise<RagDocument
 export class ChromaRagService {
   private readonly chunkOverlap: number;
   private readonly chunkSize: number;
-  private collection: Awaited<ReturnType<ChromaClient["getOrCreateCollection"]>> | null = null;
+  private readonly collections = new Map<string, Promise<ChromaCollection>>();
   private readonly collectionName: string;
   private readonly dimensions: number;
   private readonly client: ChromaClient;
@@ -174,14 +176,15 @@ export class ChromaRagService {
     };
   }
 
-  async syncDirectories(directories: string[]): Promise<RagSyncResult> {
+  async syncDirectories(directories: string[], namespace?: string): Promise<RagSyncResult> {
     const docs = (
       await Promise.all(directories.map((directory) => this.collectDocuments(directory)))
     ).flat();
+    const collectionName = this.resolveCollectionName(namespace);
 
-    await this.resetCollection();
+    await this.resetCollection(collectionName);
     if (docs.length > 0) {
-      const collection = await this.ensureCollection();
+      const collection = await this.ensureCollection(collectionName);
       const embeddings = docs.map((doc) => embedText(doc.content, this.dimensions));
 
       for (let index = 0; index < docs.length; index += 100) {
@@ -196,14 +199,14 @@ export class ChromaRagService {
     }
 
     return {
-      collection: this.collectionName,
+      collection: collectionName,
       documents: docs.length,
       indexedAt: new Date().toISOString(),
     };
   }
 
-  async query(query: string, topK: number): Promise<RagHit[]> {
-    const collection = await this.ensureCollection();
+  async query(query: string, topK: number, namespace?: string): Promise<RagHit[]> {
+    const collection = await this.ensureCollection(this.resolveCollectionName(namespace));
     const response = await collection.query({
       include: ["documents", "metadatas", "distances"],
       nResults: topK,
@@ -223,23 +226,46 @@ export class ChromaRagService {
     }));
   }
 
-  private async ensureCollection(): Promise<Awaited<ReturnType<ChromaClient["getOrCreateCollection"]>>> {
-    if (this.collection) return this.collection;
-    this.collection = await this.client.getOrCreateCollection({
-      embeddingFunction: this.embeddingFunction,
-      name: this.collectionName,
-    });
-    return this.collection;
+  async listCollections(): Promise<string[]> {
+    const total = await this.client.countCollections();
+    if (total === 0) return [];
+
+    const collections: ChromaCollection[] = [];
+    for (let offset = 0; offset < total; offset += 100) {
+      collections.push(...await this.client.listCollections({ limit: 100, offset }));
+    }
+
+    return collections.map((collection) => collection.name);
   }
 
-  private async resetCollection(): Promise<void> {
+  private resolveCollectionName(namespace?: string): string {
+    return namespace ? normalizeCollectionName(namespace) : this.collectionName;
+  }
+
+  private async ensureCollection(collectionName = this.collectionName): Promise<ChromaCollection> {
+    const existing = this.collections.get(collectionName);
+    if (existing) return existing;
+
+    const collectionPromise = this.client.getOrCreateCollection({
+      embeddingFunction: this.embeddingFunction,
+      name: collectionName,
+    }).catch((error) => {
+      this.collections.delete(collectionName);
+      throw error;
+    });
+
+    this.collections.set(collectionName, collectionPromise);
+    return collectionPromise;
+  }
+
+  private async resetCollection(collectionName = this.collectionName): Promise<void> {
     try {
-      await this.client.deleteCollection({ name: this.collectionName });
+      await this.client.deleteCollection({ name: collectionName });
     } catch {
       // collection may not exist yet
     }
-    this.collection = null;
-    await this.ensureCollection();
+    this.collections.delete(collectionName);
+    await this.ensureCollection(collectionName);
   }
 
   private async collectDocuments(directory: string): Promise<RagDocument[]> {

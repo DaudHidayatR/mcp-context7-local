@@ -93,6 +93,7 @@ export class SessionManager {
   constructor(
     private readonly config: GatewayConfig,
     private readonly env: Record<string, string | undefined>,
+    private readonly spawnFn: typeof spawn = spawn,
   ) {}
 
   sessionCount(): number {
@@ -252,13 +253,25 @@ export class SessionManager {
   }
 
   private create(id: string): Session {
-    const proc: PipedSubprocess = spawn({
-      cmd: this.config.childCommand,
-      env: this.buildChildEnv(),
-      stderr: "pipe",
-      stdin: "pipe",
-      stdout: "pipe",
-    });
+    let proc: PipedSubprocess;
+    try {
+      proc = this.spawnFn({
+        cmd: this.config.childCommand,
+        env: this.buildChildEnv(),
+        stderr: "pipe",
+        stdin: "pipe",
+        stdout: "pipe",
+      }) as PipedSubprocess;
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error
+        ? (error as { code?: unknown }).code
+        : undefined;
+      const message = error instanceof Error ? error.message : String(error);
+      if (code === "EPERM") {
+        throw new Error(`Cannot spawn child process: ${message}. Try running tests outside a rootless container.`);
+      }
+      throw error;
+    }
 
     const session: Session = {
       createdAt: Date.now(),

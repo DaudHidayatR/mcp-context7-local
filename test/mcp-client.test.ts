@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { MCPClient } from "../packages/mcp-client/src/index";
 import { createGatewayApp, type GatewayApp } from "../services/context7-gateway/src/index";
+import { createFakeSpawn } from "./fixtures/fake-spawn";
 
 const fixturePath = join(import.meta.dir, "fixtures", "fake-stdio-mcp.ts");
 const bunPath = Bun.which("bun") ?? "bun";
@@ -28,7 +29,7 @@ function startGateway() {
     port: 3100,
     requestTimeoutMs: 100,
     sessionTimeoutMs: 1_000,
-  });
+  }, Bun.env, createFakeSpawn());
 }
 
 beforeEach(() => {

@@ -1,0 +1,11 @@
+{
+  "primary": "Provide a local runner-first MCP context platform that gives AI agents persistent memory, skill knowledge, and RAG-backed project context.",
+  "milestones": [
+    "Runner-first architecture with inline MCP server",
+    "Skill registry via load_skill and list_skills tools",
+    "Project context via get_project_context with task_type routing",
+    "Namespace-isolated memory (local InMemoryStore or VPS Postgres)",
+    "Namespace-isolated RAG via ChromaDB collections",
+    "Project bootstrap via setup-project.ts"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "tech": [
+    "Bun 1.3+ for runner and gateway",
+    "Go 1.22+ for rag-service and memory-service",
+    "ChromaDB 1.5+ for vector storage",
+    "Postgres 16+ for memory-service"
+  ],
+  "volume_requirements": [
+    "./memory mounted RW at /app/memory — project data and PRD files",
+    "./.agents mounted RO at /app/.agents — SKILL.md source files for load_skill",
+    "./skills mounted RO at /app/skills — local corpus docs",
+    "./docs mounted RO at /app/docs — documentation corpus",
+    "./schemas mounted RO at /app/schemas — schema corpus"
+  ],
+  "namespace_rules": [
+    "Namespaces must match ^[a-z0-9-]+$ and be 3-40 chars",
+    "Reserved system directories under memory/: prd, skills",
+    "Each project needs bootstrap via scripts/setup-project.ts"
+  ]
+}

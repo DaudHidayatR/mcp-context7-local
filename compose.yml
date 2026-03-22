@@ -88,6 +88,7 @@ services:
       RAG_TOP_K: ${RAG_TOP_K:-5}
       RUNNER_PORT: "3200"
       VPS_MEMORY_URL: ${VPS_MEMORY_URL:-http://memory-service:8082}
+      PRD_DIR: /app/memory/prd
     depends_on:
       context7-gateway:
         condition: service_healthy
@@ -104,6 +105,7 @@ services:
       - no-new-privileges:true
     volumes:
       - ./memory:/app/memory
+      - ./.agents:/app/.agents:ro
       - ./skills:/app/skills:ro
       - ./schemas:/app/schemas:ro
       - ./docs:/app/docs:ro

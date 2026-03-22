@@ -1,0 +1,14 @@
+{
+  "incident_response": "1. Check runner /ready. 2. scripts/compose.sh logs runner. 3. scripts/compose.sh health. 4. scripts/compose.sh restart runner.",
+  "common_ops": {
+    "bootstrap_project": "bun run scripts/setup-project.ts <namespace> --name \"Display Name\"",
+    "refresh_namespace": "POST http://127.0.0.1:3200/refresh-namespace {\"namespace\":\"<ns>\"}",
+    "refresh_all": "POST http://127.0.0.1:3200/refresh",
+    "check_skills": "POST http://127.0.0.1:3200/mcp → tools/call list_skills",
+    "full_check": "scripts/compose.sh doctor"
+  },
+  "contacts": {
+    "docs": "docs/agent-system-prompt.md",
+    "readme": "README.md"
+  }
+}

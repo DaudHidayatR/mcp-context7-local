@@ -1,0 +1,7 @@
+{
+  "name": "MCP Context7 Local Platform",
+  "version": "1.0.0",
+  "description": "Local runner-first MCP platform providing project context, skill loading, RAG search, and memory persistence for AI agents.",
+  "team": "platform",
+  "repo": "mcp-context7-local"
+}

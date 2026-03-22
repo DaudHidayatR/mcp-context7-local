@@ -2,6 +2,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 
+const SYSTEM_MEMORY_DIRS = new Set(["prd", "skills"]);
+
 const taskTypeSchema = z.enum(["feature_dev", "security_review", "incident", "general"]);
 
 const getProjectContextArgsSchema = z.object({
@@ -61,7 +63,7 @@ export async function handleListProjects(memoryRoot: string): Promise<{ projects
     const projects = entries
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
-      .filter((name) => name !== "prd" && name !== "skills" && !name.startsWith("."))
+      .filter((name) => !SYSTEM_MEMORY_DIRS.has(name) && !name.startsWith("."))
       .sort((left, right) => left.localeCompare(right));
 
     return { projects };

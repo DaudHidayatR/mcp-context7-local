@@ -1,0 +1,29 @@
+{
+  "pattern": "runner-first",
+  "components": [
+    "context7-gateway — Bun HTTP wrapper around @upstash/context7-mcp, exposes /mcp on :3100",
+    "runner — Bun HTTP + MCP server on :3200, owns all agent tools",
+    "chromadb — vector database on :8000, used by runner for RAG",
+    "postgres — backing store for memory-service on :5432",
+    "rag-service — Go HTTP proxy for ChromaDB on :8081",
+    "memory-service — Go HTTP server backed by Postgres on :8082"
+  ],
+  "agent_tools": [
+    "rag_search", "memory_read", "memory_read_all", "memory_write",
+    "get_project_context", "load_skill", "list_skills", "list_projects"
+  ],
+  "key_paths": {
+    "skill_registry": "memory/skills/index.json",
+    "skill_sources": ".agents/skills/*/SKILL.md",
+    "prd_files": "memory/prd/<namespace>:prd:<section>.json",
+    "project_docs": "memory/<namespace>/",
+    "corpus_dirs": ["docs/", "skills/", "schemas/", "memory/"]
+  },
+  "adrs": [
+    {"id": 1, "title": "Inline MCP runtime in runner (not separate mcp-server.ts)"},
+    {"id": 2, "title": "Skill loading via whole-document registry, not RAG chunks"},
+    {"id": 3, "title": ".agents/ mounted read-only into Docker for skill resolution"},
+    {"id": 4, "title": "PRD_DIR explicit in compose so get_project_context resolves correctly"},
+    {"id": 5, "title": "Namespace-isolated ChromaDB collections for RAG isolation"}
+  ]
+}

@@ -563,7 +563,7 @@ export function createRunnerApp(
     chromaUrl: env.CHROMA_URL ?? "http://127.0.0.1:8000",
     memoryRoot: resolveRunnerMemoryRoot(config.corpusDirs),
     memoryUrl: env.VPS_MEMORY_URL || undefined,
-    prdDir: env.PRD_DIR ?? "/app/memory/prd",
+    prdDir: env.PRD_DIR ?? join(import.meta.dir, "../../..", "memory", "prd"),
   };
   const mcpRuntime = createRunnerMcpRuntime(mcpConfig);
   const createNamespaceRag = deps.createNamespaceRag ?? ((namespace: string) => new ChromaRagService({
@@ -635,8 +635,14 @@ export function createRunnerApp(
       if (url.pathname === "/refresh-namespace" && req.method === "POST") {
         try {
           const { namespace } = await readNamespaceRequest(req);
+          let memRoot: string;
+          try {
+            memRoot = resolveMemoryRoot(config.corpusDirs);
+          } catch {
+            memRoot = join(import.meta.dir, "../../..", "memory");
+          }
           const syncResult = await createNamespaceRag(namespace).syncDirectories([
-            join(resolveMemoryRoot(config.corpusDirs), namespace),
+            join(memRoot, namespace),
           ]);
           return jsonResponse({
             collection: syncResult.collection,

@@ -1,4 +1,6 @@
-# Split Architecture — MCP Server
+# Legacy Split Architecture — Remote Worker Path
+
+> This document is a historical reference for the older Cloudflare Worker plus VPS split architecture. It is not the primary setup guide for this repo anymore. Use [README.md](../README.md) for the runner-first local workflow and project bootstrap contract.
 
 ## Architecture
 

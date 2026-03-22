@@ -169,6 +169,43 @@ func TestUpsertIncrementsVersion(t *testing.T) {
 	}
 }
 
+func TestUpsertResetsAge(t *testing.T) {
+	store := NewMemStore()
+	srv := NewHTTPServer(store)
+	ts := newTestServer(t, srv.Handler())
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/write", "application/json",
+		strings.NewReader(`{"scope":"project","namespace":"my-app","key":"config","value":{"attempt":1}}`))
+	if err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+	resp.Body.Close()
+
+	time.Sleep(1100 * time.Millisecond)
+
+	resp, err = http.Post(ts.URL+"/write", "application/json",
+		strings.NewReader(`{"scope":"project","namespace":"my-app","key":"config","value":{"attempt":2}}`))
+	if err != nil {
+		t.Fatalf("second write failed: %v", err)
+	}
+	resp.Body.Close()
+
+	resp, err = http.Post(ts.URL+"/read", "application/json",
+		strings.NewReader(`{"scope":"project","namespace":"my-app","key":"config"}`))
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var readResult ReadResult
+	json.NewDecoder(resp.Body).Decode(&readResult)
+
+	if readResult.AgeSeconds != 0 {
+		t.Fatalf("age_seconds = %d, want 0 after overwrite", readResult.AgeSeconds)
+	}
+}
+
 func TestExpiredRowsNotReturnedByList(t *testing.T) {
 	tests := []struct {
 		name       string

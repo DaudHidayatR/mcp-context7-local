@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,7 @@ import {
   parseCreateProjectArgs,
   runCreateProject,
 } from "../scripts/create-project";
+import { runSetupProject } from "../scripts/setup-project";
 
 async function createTempProjectEnv(contents: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "create-project-"));
@@ -40,11 +41,79 @@ describe("create-project args", () => {
 });
 
 describe("create-project execution", () => {
-  test("prints checklist only in local mode", async () => {
-    const cwd = await createTempProjectEnv("CHROMA_URL=http://chroma:8000\n");
+  test("setup-project creates the filesystem bootstrap", async () => {
+    const cwd = await createTempProjectEnv("");
     tempDirs.add(cwd);
-    const calls: string[] = [];
     const output: string[] = [];
+    const errors: string[] = [];
+
+    const exitCode = await runSetupProject(["proj-alpha", "--name", "Project Alpha"], {
+      cwd,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+      stderr: (message) => errors.push(message),
+      stdout: (message) => output.push(message),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(errors).toHaveLength(0);
+    expect(output).toEqual(formatManualChecklist("proj-alpha", "Project Alpha"));
+    expect((await stat(join(cwd, "memory", "proj-alpha"))).isDirectory()).toBe(true);
+    expect(JSON.parse(await readFile(join(cwd, "memory", "prd", "proj-alpha:prd:meta.json"), "utf8"))).toEqual({
+      description: "TODO",
+      name: "Project Alpha",
+      version: "0.1.0",
+    });
+    expect(JSON.parse(await readFile(join(cwd, "memory", "prd", "proj-alpha:prd:goals.json"), "utf8"))).toEqual({
+      milestones: [],
+      primary: "TODO",
+    });
+    expect(JSON.parse(await readFile(join(cwd, "memory", "prd", "proj-alpha:prd:architecture.json"), "utf8"))).toEqual({
+      adrs: [],
+      components: [],
+    });
+    expect(JSON.parse(await readFile(join(cwd, "memory", "prd", "proj-alpha:prd:constraints.json"), "utf8"))).toEqual({
+      requirements: [],
+    });
+    expect(JSON.parse(await readFile(join(cwd, "memory", "prd", "proj-alpha:prd:sops.json"), "utf8"))).toEqual({
+      contacts: {},
+      incident_response: "TODO",
+    });
+  });
+
+  test("re-running setup skips existing files", async () => {
+    const cwd = await createTempProjectEnv("");
+    tempDirs.add(cwd);
+    await mkdir(join(cwd, "memory", "prd"), { recursive: true });
+    await writeFile(
+      join(cwd, "memory", "prd", "proj-alpha:prd:meta.json"),
+      JSON.stringify({
+        description: "kept",
+        name: "Already There",
+        version: "9.9.9",
+      }, null, 2),
+      "utf8",
+    );
+
+    const exitCode = await runSetupProject(["proj-alpha"], {
+      cwd,
+      fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+      stdout: () => {},
+    });
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(await readFile(join(cwd, "memory", "prd", "proj-alpha:prd:meta.json"), "utf8"))).toEqual({
+      description: "kept",
+      name: "Already There",
+      version: "9.9.9",
+    });
+    expect((await stat(join(cwd, "memory", "proj-alpha"))).isDirectory()).toBe(true);
+  });
+
+  test("create-project wrapper preserves local mode and avoids network calls", async () => {
+    const cwd = await createTempProjectEnv("");
+    tempDirs.add(cwd);
+    const output: string[] = [];
+    const calls: string[] = [];
 
     const exitCode = await runCreateProject(["proj-alpha", "--local"], {
       cwd,
@@ -58,11 +127,12 @@ describe("create-project execution", () => {
     expect(exitCode).toBe(0);
     expect(calls).toHaveLength(0);
     expect(output).toEqual(formatManualChecklist("proj-alpha", "proj-alpha"));
+    expect((await stat(join(cwd, "memory", "proj-alpha"))).isDirectory()).toBe(true);
+    expect(await readFile(join(cwd, "memory", "prd", "proj-alpha:prd:meta.json"), "utf8")).toContain("\"name\": \"proj-alpha\"");
   });
 
-  test("calls runner then memory service with the expected payloads", async () => {
+  test("best-effort network failures only warn and still bootstrap files", async () => {
     const cwd = await createTempProjectEnv([
-      "CHROMA_URL=http://chroma:8000",
       "GATEWAY_AUTH_TOKEN=secret-token",
       "VPS_MEMORY_URL=http://memory.example:8082/",
     ].join("\n"));
@@ -70,8 +140,9 @@ describe("create-project execution", () => {
 
     const requests: Array<{ body: string; headers: Headers; url: string }> = [];
     const output: string[] = [];
+    const warnings: string[] = [];
 
-    const exitCode = await runCreateProject(["proj-alpha", "--name", "Project Alpha"], {
+    const exitCode = await runSetupProject(["proj-alpha", "--name", "Project Alpha"], {
       cwd,
       fetchImpl: async (url, init) => {
         requests.push({
@@ -79,9 +150,13 @@ describe("create-project execution", () => {
           headers: new Headers(init?.headers),
           url: String(url),
         });
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        if (String(url).includes("refresh-namespace")) {
+          throw new TypeError("network down");
+        }
+        return new Response("memory unavailable", { status: 503, statusText: "Service Unavailable" });
       },
       now: () => new Date("2026-03-22T01:02:03.000Z"),
+      stderr: (message) => warnings.push(message),
       stdout: (message) => output.push(message),
     });
 
@@ -101,48 +176,14 @@ describe("create-project execution", () => {
         name: "Project Alpha",
       },
     });
+    expect(warnings[0]).toContain("refresh-namespace failed");
+    expect(warnings[1]).toContain("memory_write(init) failed");
     expect(output).toEqual(formatManualChecklist("proj-alpha", "Project Alpha"));
-  });
-
-  test("falls back to localhost memory-service when VPS_MEMORY_URL is missing", async () => {
-    const cwd = await createTempProjectEnv("CHROMA_URL=http://chroma:8000\n");
-    tempDirs.add(cwd);
-    const urls: string[] = [];
-
-    const exitCode = await runCreateProject(["proj-alpha"], {
-      cwd,
-      fetchImpl: async (url) => {
-        urls.push(String(url));
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      },
-      stdout: () => {},
+    expect((await stat(join(cwd, "memory", "proj-alpha"))).isDirectory()).toBe(true);
+    expect(JSON.parse(await readFile(join(cwd, "memory", "prd", "proj-alpha:prd:meta.json"), "utf8"))).toEqual({
+      description: "TODO",
+      name: "Project Alpha",
+      version: "0.1.0",
     });
-
-    expect(exitCode).toBe(0);
-    expect(urls).toEqual([
-      "http://127.0.0.1:3200/refresh-namespace",
-      "http://127.0.0.1:8082/write",
-    ]);
-  });
-
-  test("returns a non-zero exit code when the runner refresh fails", async () => {
-    const cwd = await createTempProjectEnv("CHROMA_URL=http://chroma:8000\n");
-    tempDirs.add(cwd);
-    const errors: string[] = [];
-
-    const exitCode = await runCreateProject(["proj-alpha"], {
-      cwd,
-      fetchImpl: async (url) => {
-        if (String(url).includes("refresh-namespace")) {
-          return new Response("runner down", { status: 503, statusText: "Service Unavailable" });
-        }
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      },
-      stderr: (message) => errors.push(message),
-      stdout: () => {},
-    });
-
-    expect(exitCode).toBe(1);
-    expect(errors[0]).toContain("http://127.0.0.1:3200/refresh-namespace returned 503");
   });
 });

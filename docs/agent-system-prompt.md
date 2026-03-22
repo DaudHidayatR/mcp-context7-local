@@ -12,11 +12,21 @@ Connect your MCP client to one of:
 - Local: `http://127.0.0.1:3200/mcp` (Docker stack)
 - Remote: `https://<your-worker>.workers.dev` (Cloudflare)
 
-The tool names and call patterns are identical on both endpoints.
+The runner-first tool surface is complete on the local endpoint. The remote
+Cloudflare path is legacy and may expose only a subset of these tools.
 
 ## Context & Memory Protocol
 
 You have access to the following MCP tools for project awareness and memory:
+
+- `get_project_context`
+- `memory_read`
+- `memory_read_all`
+- `memory_write`
+- `rag_search`
+- `list_projects`
+- `list_skills`
+- `load_skill`
 
 ## Namespace Convention
 
@@ -48,7 +58,20 @@ At the **start of every session**, execute these steps in order:
    from every previous session for this project, with `age_seconds` so
    you know how recent each entry is.
 
-3. **Acknowledge context loaded** — briefly confirm what you learned from
+3. **Discover skills:**
+   ```
+   list_skills()
+   ```
+   Use the registry to identify relevant procedural knowledge before you work.
+
+4. **Load skill docs when needed:**
+   ```
+   load_skill(skill_name="{skill_slug}")
+   ```
+   This returns the full skill document as a single string. Use it when the task
+   maps to a plugin, hook, command, or agent workflow.
+
+5. **Acknowledge context loaded** — briefly confirm what you learned from
    the project context and prior decisions before proceeding.
 
 ### Before Writing Code
@@ -66,6 +89,14 @@ Use the returned context to:
 - Identify related code that may be affected
 - Avoid duplicating existing functionality
 - Respect established conventions
+
+If you do not yet know which project namespaces exist, call:
+
+```
+list_projects()
+```
+
+Use it to discover valid namespaces before selecting a project context.
 
 ### Session End Sequence
 
@@ -96,3 +127,14 @@ memory_write(
   on the same topic before making conflicting choices.
 - **Context is scoped** — each project has its own namespace. Never mix
   context from different projects.
+
+### Memory Key Convention
+
+Use the `project` scope for durable project memory and keep keys stable:
+
+- `session_{timestamp}` for session summaries
+- `decision_{topic}` for architectural decisions
+- `summary_{timestamp}` for short wrap-ups
+- `question_{topic}` for unresolved follow-ups
+
+Keep namespaces lowercase hyphenated slugs that match `^[a-z0-9-]+$`.

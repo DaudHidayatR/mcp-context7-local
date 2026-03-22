@@ -29,6 +29,27 @@ chmod +x scripts/compose.sh start-context7-mcp.sh
 
 The gateway binds to `127.0.0.1:3100` by default. The runner and Chroma stay internal to the compose network.
 
+## Runner-First Workflow
+
+The local runner is the default workflow for project-aware context and memory.
+
+Create a new project with:
+
+```bash
+bun run scripts/setup-project.ts my-project --name "My Project"
+```
+
+That command is expected to create:
+
+- `memory/my-project/` for namespace documents
+- `memory/prd/my-project:prd:meta.json`
+- `memory/prd/my-project:prd:goals.json`
+- `memory/prd/my-project:prd:architecture.json`
+- `memory/prd/my-project:prd:constraints.json`
+- `memory/prd/my-project:prd:sops.json`
+
+The setup flow is idempotent. Existing files are skipped, not overwritten.
+
 ## MCP Client Config
 
 HTTP MCP clients:
@@ -44,9 +65,9 @@ HTTP MCP clients:
 ```
 
 This is the default agent-facing endpoint for the local Docker stack. The
-runner exposes the project-aware MCP tools:
-`rag_search`, `memory_read`, `memory_read_all`, `memory_write`, and
-`get_project_context`.
+runner MCP contract is the project-aware tool surface used by agents:
+`rag_search`, `memory_read`, `memory_read_all`, `memory_write`,
+`get_project_context`, `list_projects`, `list_skills`, and `load_skill`.
 
 If you want the remote deployment instead, use the same server name with your
 Cloudflare Worker URL:
@@ -61,8 +82,9 @@ Cloudflare Worker URL:
 }
 ```
 
-The gateway remains available separately on `http://127.0.0.1:3100/mcp` for the
-Context7 server surface.
+The remote Worker path is legacy and may not expose the full runner-first tool
+surface yet. The gateway remains available separately on
+`http://127.0.0.1:3100/mcp` for the legacy Context7 server surface.
 
 SSE clients:
 
@@ -160,6 +182,17 @@ Successful responses include:
 ```
 
 If `provider: "gemini"` is explicitly requested and Gemini fails, the runner returns an error instead of falling back to Codex.
+
+## Filesystem Contracts
+
+The runner-first project contract uses the filesystem as the source of truth:
+
+- `memory/<namespace>/` stores namespace documents that are indexed into RAG
+- `memory/prd/<namespace>:prd:*.json` stores project context sections
+- `memory/skills/index.json` stores the runtime skill registry
+- `.agents/skills/*/SKILL.md` are the canonical whole-document skill sources referenced by the registry
+
+The `memory/prd` files are read by `get_project_context`, and the skill registry is read by `list_skills` and `load_skill`.
 
 ## Scripts
 

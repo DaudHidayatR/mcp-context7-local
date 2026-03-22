@@ -208,7 +208,8 @@ func (s *PgStore) Write(ctx context.Context, req WriteRequest) (*WriteResult, er
 			expires_at = EXCLUDED.expires_at,
 			checksum = EXCLUDED.checksum,
 			tags = EXCLUDED.tags,
-			accessed_at = NOW()
+			accessed_at = NOW(),
+			created_at = NOW()
 		RETURNING version
 	`, req.Scope, req.Namespace, req.Key, req.Value, expiresAt, checksum, pq.Array(req.Tags)).Scan(&version)
 
@@ -321,19 +322,12 @@ func (s *MemStore) Write(_ context.Context, req WriteRequest) (*WriteResult, err
 		expiresAt = &t
 	}
 
-	var createdAt time.Time
-	if existing, ok := s.data[k]; ok {
-		createdAt = existing.WrittenAt
-	} else {
-		createdAt = time.Now()
-	}
-
 	s.data[k] = &memEntry{
 		Value:     req.Value,
 		Version:   version,
 		ExpiresAt: expiresAt,
 		Tags:      req.Tags,
-		WrittenAt: createdAt,
+		WrittenAt: time.Now(),
 	}
 
 	return &WriteResult{OK: true, VersionID: version}, nil

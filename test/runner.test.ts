@@ -351,7 +351,10 @@ describe("runner mcp", () => {
       expect(toolNames).toContain("memory_read");
       expect(toolNames).toContain("memory_read_all");
       expect(toolNames).toContain("get_project_context");
-      expect(toolNames).toHaveLength(5);
+      expect(toolNames).toContain("load_skill");
+      expect(toolNames).toContain("list_skills");
+      expect(toolNames).toContain("list_projects");
+      expect(toolNames).toHaveLength(8);
     } finally {
       app.dispose();
     }

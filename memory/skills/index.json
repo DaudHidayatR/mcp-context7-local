@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "description": "Runtime registry for whole-document skill loading in the runner-first MCP context platform.",
+  "skills": [
+    {
+      "name": "agent-development",
+      "description": "Create and improve autonomous agents, including triggers, tools, prompts, and examples.",
+      "source_path": ".agents/skills/Agent Development/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "command-development",
+      "description": "Create and maintain slash commands with arguments, interactive prompts, and file references.",
+      "source_path": ".agents/skills/Command Development/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "doc-coauthoring",
+      "description": "Co-author proposals, specs, PRDs, RFCs, and decision docs with a structure-first process.",
+      "source_path": ".agents/skills/doc-coauthoring/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "hook-development",
+      "description": "Create hooks for tool validation, prompt-based automation, and event-driven plugin behavior.",
+      "source_path": ".agents/skills/Hook Development/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "mcp-builder",
+      "description": "Design and implement MCP servers with clear tool contracts, pagination, and evaluation coverage.",
+      "source_path": ".agents/skills/mcp-builder/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "mcp-integration",
+      "description": "Integrate MCP servers into plugins and configure stdio, SSE, HTTP, or WebSocket transports.",
+      "source_path": ".agents/skills/MCP Integration/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "plugin-settings",
+      "description": "Store and manage plugin-specific configuration and local state in markdown or YAML-backed files.",
+      "source_path": ".agents/skills/Plugin Settings/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "plugin-structure",
+      "description": "Understand plugin directory layout, manifests, and component organization.",
+      "source_path": ".agents/skills/Plugin Structure/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "product-self-knowledge",
+      "description": "Route Claude and OpenAI product questions to the correct official source.",
+      "source_path": ".agents/skills/product-self-knowledge/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "skill-development",
+      "description": "Create and refine skills with progressive disclosure, evaluations, and clear triggers.",
+      "source_path": ".agents/skills/Skill Development/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "writing-hookify-rules",
+      "description": "Write hookify rules for prompt-based automation and tool policy enforcement.",
+      "source_path": ".agents/skills/Writing Hookify Rules/SKILL.md",
+      "load_mode": "whole-document"
+    }
+  ]
+}

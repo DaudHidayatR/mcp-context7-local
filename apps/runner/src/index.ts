@@ -9,9 +9,11 @@ import {
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { z } from "zod";
+import { InMemoryStore, handleMemoryRead, handleMemoryReadAll, handleMemoryWrite } from "./tools/memory";
+import { handleGetProjectContext, handleListProjects } from "./tools/project";
+import { handleRagSearch } from "./tools/rag";
+import { handleListSkills, handleLoadSkill } from "./tools/skills";
 
 export type QueryProvider = "codex" | "gemini";
 
@@ -134,13 +136,20 @@ function resolveMemoryRoot(corpusDirs: string[]): string {
   return memoryDir;
 }
 
+function resolveRunnerMemoryRoot(corpusDirs: string[]): string {
+  try {
+    return resolveMemoryRoot(corpusDirs);
+  } catch {
+    return join(import.meta.dir, "../../..", "memory");
+  }
+}
+
 interface RunnerMcpConfig {
   chromaUrl: string;
+  memoryRoot: string;
   memoryUrl: string | undefined;
   prdDir: string;
 }
-
-type RunnerTaskType = "feature_dev" | "security_review" | "incident" | "general";
 
 interface RunnerMcpSession {
   server: Server;
@@ -151,45 +160,6 @@ interface RunnerMcpRuntime {
   dispose: () => void;
   fetch: (req: Request) => Promise<Response>;
 }
-
-interface MemoryEntry {
-  value: unknown;
-  version: number;
-  expiresAt: number | null;
-  tags: string[];
-  writtenAt: number;
-}
-
-const ragSearchArgsSchema = z.object({
-  namespace: z.string(),
-  query: z.string(),
-  top_k: z.number().int().positive().default(5),
-});
-
-const memoryReadArgsSchema = z.object({
-  scope: z.string(),
-  namespace: z.string(),
-  key: z.string(),
-});
-
-const memoryReadAllArgsSchema = z.object({
-  scope: z.string(),
-  namespace: z.string(),
-});
-
-const memoryWriteArgsSchema = z.object({
-  scope: z.string(),
-  namespace: z.string(),
-  key: z.string(),
-  value: z.unknown(),
-  tags: z.array(z.string()).default([]),
-  ttl_seconds: z.number().int().positive().nullable().default(null),
-});
-
-const getProjectContextArgsSchema = z.object({
-  task_type: z.enum(["feature_dev", "security_review", "incident", "general"]),
-  namespace: z.string(),
-});
 
 const RUNNER_MCP_TOOLS = [
   {
@@ -276,93 +246,37 @@ const RUNNER_MCP_TOOLS = [
     },
     name: "get_project_context",
   },
+  {
+    description: "Load a complete procedural skill document by skill slug.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skill_name: { type: "string", description: "Skill slug to load" },
+      },
+      required: ["skill_name"],
+      additionalProperties: false,
+    },
+    name: "load_skill",
+  },
+  {
+    description: "List available procedural skills exposed to the runner.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+    name: "list_skills",
+  },
+  {
+    description: "List project namespaces discovered under the memory root.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+    name: "list_projects",
+  },
 ] as const;
-
-const RUNNER_TASK_TYPE_SECTIONS: Record<RunnerTaskType, string[]> = {
-  feature_dev: ["meta", "goals", "architecture"],
-  security_review: ["meta", "constraints", "sops"],
-  incident: ["meta", "sops", "constraints"],
-  general: ["meta", "goals"],
-};
-
-class InMemoryStore {
-  private data = new Map<string, MemoryEntry>();
-
-  private key(scope: string, namespace: string, key: string): string {
-    return `${scope}::${namespace}::${key}`;
-  }
-
-  read(scope: string, namespace: string, key: string): {
-    value: unknown;
-    found: boolean;
-    age_seconds: number;
-    version: number;
-  } {
-    const entry = this.data.get(this.key(scope, namespace, key));
-    if (!entry) {
-      return { value: null, found: false, age_seconds: 0, version: 0 };
-    }
-
-    if (entry.expiresAt !== null && entry.expiresAt < Date.now()) {
-      this.data.delete(this.key(scope, namespace, key));
-      return { value: null, found: false, age_seconds: 0, version: 0 };
-    }
-
-    return {
-      value: entry.value,
-      found: true,
-      age_seconds: Math.floor((Date.now() - entry.writtenAt) / 1000),
-      version: entry.version,
-    };
-  }
-
-  readAll(scope: string, namespace: string): {
-    entries: Array<{ key: string; value: unknown; age_seconds: number; version: number }>;
-  } {
-    const prefix = `${scope}::${namespace}::`;
-    const entries: Array<{ key: string; value: unknown; age_seconds: number; version: number }> = [];
-
-    for (const [fullKey, entry] of this.data) {
-      if (!fullKey.startsWith(prefix)) continue;
-      if (entry.expiresAt !== null && entry.expiresAt < Date.now()) {
-        this.data.delete(fullKey);
-        continue;
-      }
-
-      entries.push({
-        key: fullKey.slice(prefix.length),
-        value: entry.value,
-        age_seconds: Math.floor((Date.now() - entry.writtenAt) / 1000),
-        version: entry.version,
-      });
-    }
-
-    return { entries };
-  }
-
-  write(
-    scope: string,
-    namespace: string,
-    key: string,
-    value: unknown,
-    tags: string[],
-    ttlSeconds: number | null,
-  ): { ok: boolean; version_id: number } {
-    const storageKey = this.key(scope, namespace, key);
-    const existing = this.data.get(storageKey);
-    const version = existing ? existing.version + 1 : 1;
-
-    this.data.set(storageKey, {
-      value,
-      version,
-      expiresAt: ttlSeconds && ttlSeconds > 0 ? Date.now() + ttlSeconds * 1000 : null,
-      tags,
-      writtenAt: existing?.writtenAt ?? Date.now(),
-    });
-
-    return { ok: true, version_id: version };
-  }
-}
 
 async function proxyToMemory(url: string, body: unknown): Promise<unknown> {
   const controller = new AbortController();
@@ -392,27 +306,6 @@ async function proxyToMemory(url: string, body: unknown): Promise<unknown> {
   }
 }
 
-async function loadProjectContext(
-  prdDir: string,
-  taskType: RunnerTaskType,
-  namespace: string,
-): Promise<Record<string, unknown>> {
-  const sections = RUNNER_TASK_TYPE_SECTIONS[taskType];
-  const context: Record<string, unknown> = {};
-
-  for (const section of sections) {
-    const filePath = join(prdDir, `${namespace}:prd:${section}.json`);
-    try {
-      const raw = await readFile(filePath, "utf8");
-      context[section] = JSON.parse(raw);
-    } catch {
-      // Missing sections are ignored to preserve the current fallback behavior.
-    }
-  }
-
-  return context;
-}
-
 function createToolResult(value: unknown, isError = false) {
   return isError
     ? {
@@ -431,48 +324,46 @@ function createRunnerMcpRuntime(config: RunnerMcpConfig): RunnerMcpRuntime {
     url: config.chromaUrl,
   });
   const localMemory = new InMemoryStore();
-  const useLocalMemory = !config.memoryUrl;
+  const repoRoot = join(import.meta.dir, "../../..");
 
   const callTool = async (name: string, args: unknown) => {
     try {
       switch (name) {
         case "rag_search": {
-          const { namespace, query, top_k } = ragSearchArgsSchema.parse(args ?? {});
-          const hits = await rag.query(query, top_k, namespace);
-          return createToolResult({ results: hits });
+          return createToolResult(await handleRagSearch(args, rag));
         }
         case "memory_read": {
-          const { scope, namespace, key } = memoryReadArgsSchema.parse(args ?? {});
-          const result = useLocalMemory
-            ? localMemory.read(scope, namespace, key)
-            : await proxyToMemory(`${config.memoryUrl}/read`, { scope, namespace, key });
-          return createToolResult(result);
+          return createToolResult(await handleMemoryRead(args, {
+            memoryUrl: config.memoryUrl,
+            proxyToMemory,
+            store: localMemory,
+          }));
         }
         case "memory_read_all": {
-          const { scope, namespace } = memoryReadAllArgsSchema.parse(args ?? {});
-          const result = useLocalMemory
-            ? localMemory.readAll(scope, namespace)
-            : await proxyToMemory(`${config.memoryUrl}/read-all`, { scope, namespace });
-          return createToolResult(result);
+          return createToolResult(await handleMemoryReadAll(args, {
+            memoryUrl: config.memoryUrl,
+            proxyToMemory,
+            store: localMemory,
+          }));
         }
         case "memory_write": {
-          const { scope, namespace, key, value, tags, ttl_seconds } = memoryWriteArgsSchema.parse(args ?? {});
-          const result = useLocalMemory
-            ? localMemory.write(scope, namespace, key, value, tags, ttl_seconds)
-            : await proxyToMemory(`${config.memoryUrl}/write`, {
-              scope,
-              namespace,
-              key,
-              value: typeof value === "string" ? value : JSON.stringify(value),
-              tags,
-              ttl_seconds,
-            });
-          return createToolResult(result);
+          return createToolResult(await handleMemoryWrite(args, {
+            memoryUrl: config.memoryUrl,
+            proxyToMemory,
+            store: localMemory,
+          }));
         }
         case "get_project_context": {
-          const { task_type, namespace } = getProjectContextArgsSchema.parse(args ?? {});
-          const context = await loadProjectContext(config.prdDir, task_type, namespace);
-          return createToolResult({ project_context: context });
+          return createToolResult(await handleGetProjectContext(args, config.prdDir));
+        }
+        case "load_skill": {
+          return createToolResult(await handleLoadSkill(args, repoRoot));
+        }
+        case "list_skills": {
+          return createToolResult(await handleListSkills(repoRoot));
+        }
+        case "list_projects": {
+          return createToolResult(await handleListProjects(config.memoryRoot));
         }
         default:
           return createToolResult(`Tool ${name} not found`, true);
@@ -670,6 +561,7 @@ export function createRunnerApp(
 ): RunnerApp {
   const mcpConfig: RunnerMcpConfig = {
     chromaUrl: env.CHROMA_URL ?? "http://127.0.0.1:8000",
+    memoryRoot: resolveRunnerMemoryRoot(config.corpusDirs),
     memoryUrl: env.VPS_MEMORY_URL || undefined,
     prdDir: env.PRD_DIR ?? "/app/memory/prd",
   };

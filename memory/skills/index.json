@@ -51,6 +51,12 @@
       "load_mode": "whole-document"
     },
     {
+      "name": "prd-generator",
+      "description": "Generate the five memory/prd JSON files (meta, goals, architecture, constraints, sops) that back get_project_context. Use when bootstrapping a new project namespace or filling in project requirements.",
+      "source_path": ".agents/skills/prd-generator/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
       "name": "product-self-knowledge",
       "description": "Route Claude and OpenAI product questions to the correct official source.",
       "source_path": ".agents/skills/product-self-knowledge/SKILL.md",

@@ -203,8 +203,15 @@ case "$CMD" in
 
   up)
     ensure_env
-    log "Starting context7-gateway in daemon mode..."
-    compose up -d "$@"
+    log "Starting runner-first stack in daemon mode..."
+    VPS_MEMORY_URL="${VPS_MEMORY_URL-}" compose up -d "$@"
+    ;;
+
+  legacy)
+    ensure_env
+    log "Starting runner-first stack with legacy durable-memory services..."
+    VPS_MEMORY_URL="${VPS_MEMORY_URL:-http://memory-service:8082}" \
+      $COMPOSE -f "$COMPOSE_FILE" --profile legacy up -d "$@"
     ;;
 
   down)
@@ -292,6 +299,7 @@ Usage: ./scripts/compose.sh <command> [args]
 Commands:
   build              Build platform images
   up [svc]           Start all services or one service in the background
+  legacy [svc]       Start services with the legacy durable-memory profile
   down               Stop and remove platform containers
   logs [service]     Follow logs (default: context7-gateway)
   health             Check service health plus gateway HTTP health

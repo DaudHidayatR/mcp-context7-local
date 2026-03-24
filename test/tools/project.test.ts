@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleGetProjectContext, handleListProjects } from "../../apps/runner/src/tools/project";
+import { handleGetProjectContext, handleListProjects, ProjectContextCache } from "../../apps/runner/src/tools/project";
 
 const tempDirs = new Set<string>();
 
@@ -41,6 +41,30 @@ describe("runner project tools", () => {
       },
     });
     expect(result.project_context).not.toHaveProperty("architecture");
+  });
+
+  test("invalidates cached PRD content when a section file changes", async () => {
+    const prdDir = await createTempDir("runner-prd-");
+    const cache = new ProjectContextCache();
+    const metaPath = join(prdDir, "alpha:prd:meta.json");
+
+    await writeFile(metaPath, JSON.stringify({ name: "Alpha v1" }), "utf8");
+    const first = await handleGetProjectContext(
+      { namespace: "alpha", task_type: "general" },
+      prdDir,
+      cache,
+    );
+
+    await Bun.sleep(5);
+    await writeFile(metaPath, JSON.stringify({ name: "Alpha v2" }), "utf8");
+    const second = await handleGetProjectContext(
+      { namespace: "alpha", task_type: "general" },
+      prdDir,
+      cache,
+    );
+
+    expect(first.project_context.meta).toEqual({ name: "Alpha v1" });
+    expect(second.project_context.meta).toEqual({ name: "Alpha v2" });
   });
 
   test("lists only project directories under the memory root", async () => {

@@ -10,7 +10,7 @@ COPY apps/runner/package.json apps/runner/package.json
 COPY packages/mcp-client/package.json packages/mcp-client/package.json
 COPY packages/rag/package.json packages/rag/package.json
 COPY services/context7-gateway/package.json services/context7-gateway/package.json
-RUN bun install --production
+RUN bun install --production --frozen-lockfile
 COPY services/context7-gateway/src services/context7-gateway/src
 
 FROM docker.io/oven/bun:${BUN_VERSION}-alpine AS runtime
@@ -26,4 +26,4 @@ USER gateway
 EXPOSE 3100
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3100/health || exit 1
-CMD ["bun", "run", "services/context7-gateway/src/index.ts"]
+CMD ["bun", "--smol", "run", "services/context7-gateway/src/index.ts"]

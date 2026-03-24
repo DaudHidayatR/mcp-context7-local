@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 
@@ -14,6 +14,75 @@ export interface SkillSummary {
 interface SkillFileEntry extends SkillSummary {
   filePath: string;
   skillName: string;
+}
+
+interface CachedRegistryEntry {
+  mtimeMs: number;
+  skills: SkillFileEntry[];
+}
+
+interface CachedSkillContentEntry {
+  content: string;
+  mtimeMs: number;
+}
+
+export class SkillsCache {
+  private readonly contentEntries = new Map<string, CachedSkillContentEntry>();
+  private registryEntry: CachedRegistryEntry | null = null;
+
+  constructor(private readonly maxContentEntries = 64) {}
+
+  clear(): void {
+    this.registryEntry = null;
+    this.contentEntries.clear();
+  }
+
+  async loadRegistry(registryPath: string, repoRoot: string): Promise<SkillFileEntry[] | null> {
+    try {
+      const info = await stat(registryPath);
+      if (this.registryEntry && this.registryEntry.mtimeMs === info.mtimeMs) {
+        return this.registryEntry.skills;
+      }
+
+      const raw = await readFile(registryPath, "utf8");
+      const parsed = skillRegistrySchema.parse(JSON.parse(raw));
+      const skills = parsed.skills
+        .map((skill) => ({
+          description: skill.description,
+          filePath: join(repoRoot, skill.source_path),
+          name: normalizeSkillName(skill.name),
+          skillName: normalizeSkillName(skill.name),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      this.registryEntry = { mtimeMs: info.mtimeMs, skills };
+      return skills;
+    } catch {
+      this.registryEntry = null;
+      return null;
+    }
+  }
+
+  async loadSkillContent(filePath: string): Promise<string> {
+    const info = await stat(filePath);
+    const cached = this.contentEntries.get(filePath);
+    if (cached && cached.mtimeMs === info.mtimeMs) {
+      return cached.content;
+    }
+
+    const content = await readFile(filePath, "utf8");
+    this.setContent(filePath, { content, mtimeMs: info.mtimeMs });
+    return content;
+  }
+
+  private setContent(filePath: string, entry: CachedSkillContentEntry): void {
+    this.contentEntries.delete(filePath);
+    this.contentEntries.set(filePath, entry);
+    while (this.contentEntries.size > this.maxContentEntries) {
+      const oldestKey = this.contentEntries.keys().next().value;
+      if (!oldestKey) break;
+      this.contentEntries.delete(oldestKey);
+    }
+  }
 }
 
 const skillRegistrySchema = z.object({
@@ -95,8 +164,15 @@ async function collectSkillsFromDirectory(skillsDir: string): Promise<SkillFileE
   }
 }
 
-async function collectSkillsFromRegistry(repoRoot: string): Promise<SkillFileEntry[]> {
+async function collectSkillsFromRegistry(repoRoot: string, cache?: SkillsCache): Promise<SkillFileEntry[]> {
   const registryPath = join(repoRoot, "memory", "skills", "index.json");
+
+  if (cache) {
+    const cached = await cache.loadRegistry(registryPath, repoRoot);
+    if (cached) {
+      return cached;
+    }
+  }
 
   try {
     const raw = await readFile(registryPath, "utf8");
@@ -115,8 +191,8 @@ async function collectSkillsFromRegistry(repoRoot: string): Promise<SkillFileEnt
   }
 }
 
-async function collectSkills(repoRoot: string): Promise<SkillFileEntry[]> {
-  const registeredSkills = await collectSkillsFromRegistry(repoRoot);
+async function collectSkills(repoRoot: string, cache?: SkillsCache): Promise<SkillFileEntry[]> {
+  const registeredSkills = await collectSkillsFromRegistry(repoRoot, cache);
   if (registeredSkills.length > 0) {
     return registeredSkills;
   }
@@ -129,8 +205,8 @@ function findSkill(skills: SkillFileEntry[], skillName: string): SkillFileEntry 
   return skills.find((skill) => skill.skillName === normalized);
 }
 
-export async function handleListSkills(repoRoot: string): Promise<{ skills: SkillSummary[] }> {
-  const skills = await collectSkills(repoRoot);
+export async function handleListSkills(repoRoot: string, cache?: SkillsCache): Promise<{ skills: SkillSummary[] }> {
+  const skills = await collectSkills(repoRoot, cache);
   return {
     skills: skills.map(({ description, name }) => ({ description, name })),
   };
@@ -139,12 +215,13 @@ export async function handleListSkills(repoRoot: string): Promise<{ skills: Skil
 export async function handleLoadSkill(
   args: unknown,
   repoRoot: string,
+  cache?: SkillsCache,
 ): Promise<
   | { content: string; loaded_at: string; skill_name: string }
   | { available_skills: SkillSummary[]; error: string }
 > {
   const { skill_name } = loadSkillArgsSchema.parse(args ?? {});
-  const skills = await collectSkills(repoRoot);
+  const skills = await collectSkills(repoRoot, cache);
   const skill = findSkill(skills, skill_name);
 
   if (!skill) {
@@ -154,7 +231,7 @@ export async function handleLoadSkill(
     };
   }
 
-  const content = await readFile(skill.filePath, "utf8");
+  const content = cache ? await cache.loadSkillContent(skill.filePath) : await readFile(skill.filePath, "utf8");
   return {
     content,
     loaded_at: new Date().toISOString(),

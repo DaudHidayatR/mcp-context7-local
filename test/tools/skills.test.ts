@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleListSkills, handleLoadSkill } from "../../apps/runner/src/tools/skills";
+import { handleListSkills, handleLoadSkill, SkillsCache } from "../../apps/runner/src/tools/skills";
 
 const tempDirs = new Set<string>();
 
@@ -126,5 +126,60 @@ describe("runner skills tools", () => {
       error: "Skill not found: missing-skill",
       available_skills: [{ description: "Hook tooling", name: "hook-development" }],
     });
+  });
+
+  test("invalidates cached registry and skill content when files change", async () => {
+    const repoRoot = await createTempDir("runner-skills-");
+    const cache = new SkillsCache();
+    const registryPath = join(repoRoot, "memory", "skills", "index.json");
+    const skillPath = join(repoRoot, ".agents", "skills", "Hook Development", "SKILL.md");
+
+    await mkdir(join(repoRoot, "memory", "skills"), { recursive: true });
+    await mkdir(join(repoRoot, ".agents", "skills", "Hook Development"), { recursive: true });
+    await writeFile(skillPath, "# Version 1\n", "utf8");
+    await writeFile(
+      registryPath,
+      JSON.stringify({
+        skills: [
+          {
+            description: "Hook tooling v1",
+            name: "hook-development",
+            source_path: ".agents/skills/Hook Development/SKILL.md",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const firstList = await handleListSkills(repoRoot, cache);
+    const firstLoad = await handleLoadSkill({ skill_name: "hook-development" }, repoRoot, cache);
+
+    await Bun.sleep(5);
+    await writeFile(skillPath, "# Version 2\n", "utf8");
+    await writeFile(
+      registryPath,
+      JSON.stringify({
+        skills: [
+          {
+            description: "Hook tooling v2",
+            name: "hook-development",
+            source_path: ".agents/skills/Hook Development/SKILL.md",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const secondList = await handleListSkills(repoRoot, cache);
+    const secondLoad = await handleLoadSkill({ skill_name: "hook-development" }, repoRoot, cache);
+
+    expect(firstList).toEqual({
+      skills: [{ description: "Hook tooling v1", name: "hook-development" }],
+    });
+    expect(firstLoad).toMatchObject({ content: "# Version 1\n" });
+    expect(secondList).toEqual({
+      skills: [{ description: "Hook tooling v2", name: "hook-development" }],
+    });
+    expect(secondLoad).toMatchObject({ content: "# Version 2\n" });
   });
 });

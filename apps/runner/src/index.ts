@@ -11,9 +11,9 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { basename, join } from "node:path";
 import { InMemoryStore, handleMemoryRead, handleMemoryReadAll, handleMemoryWrite } from "./tools/memory";
-import { handleGetProjectContext, handleListProjects } from "./tools/project";
+import { handleGetProjectContext, handleListProjects, ProjectContextCache } from "./tools/project";
 import { handleRagSearch } from "./tools/rag";
-import { handleListSkills, handleLoadSkill } from "./tools/skills";
+import { handleListSkills, handleLoadSkill, SkillsCache } from "./tools/skills";
 
 export type QueryProvider = "codex" | "gemini";
 
@@ -68,6 +68,8 @@ export interface RunnerHandle {
   server: Bun.Server<undefined>;
   stop: () => void;
 }
+
+const TOOL_CACHE_TTL_MS = 30_000;
 
 class ProviderExecutionError extends Error {
   constructor(public readonly provider: QueryProvider, message: string) {
@@ -159,6 +161,50 @@ interface RunnerMcpSession {
 interface RunnerMcpRuntime {
   dispose: () => void;
   fetch: (req: Request) => Promise<Response>;
+}
+
+interface RunnerSharedCaches {
+  projectContext: ProjectContextCache;
+  skills: SkillsCache;
+}
+
+class TimedValueCache<T> {
+  private expiresAt = 0;
+  private pending: Promise<T> | null = null;
+  private value: T | null = null;
+
+  constructor(
+    private readonly loader: () => Promise<T>,
+    private readonly ttlMs: number,
+  ) {}
+
+  clear(): void {
+    this.expiresAt = 0;
+    this.value = null;
+  }
+
+  async get(forceRefresh = false): Promise<T> {
+    const now = Date.now();
+    if (!forceRefresh && this.value !== null && now < this.expiresAt) {
+      return this.value;
+    }
+
+    if (this.pending) {
+      return this.pending;
+    }
+
+    this.pending = this.loader()
+      .then((value) => {
+        this.value = value;
+        this.expiresAt = Date.now() + this.ttlMs;
+        return value;
+      })
+      .finally(() => {
+        this.pending = null;
+      });
+
+    return this.pending;
+  }
 }
 
 const RUNNER_MCP_TOOLS = [
@@ -317,7 +363,7 @@ function createToolResult(value: unknown, isError = false) {
     };
 }
 
-function createRunnerMcpRuntime(config: RunnerMcpConfig): RunnerMcpRuntime {
+function createRunnerMcpRuntime(config: RunnerMcpConfig, sharedCaches: RunnerSharedCaches): RunnerMcpRuntime {
   const sessions = new Map<string, RunnerMcpSession>();
   const rag = new ChromaRagService({
     collectionName: "context7-local",
@@ -354,13 +400,13 @@ function createRunnerMcpRuntime(config: RunnerMcpConfig): RunnerMcpRuntime {
           }));
         }
         case "get_project_context": {
-          return createToolResult(await handleGetProjectContext(args, config.prdDir));
+          return createToolResult(await handleGetProjectContext(args, config.prdDir, sharedCaches.projectContext));
         }
         case "load_skill": {
-          return createToolResult(await handleLoadSkill(args, repoRoot));
+          return createToolResult(await handleLoadSkill(args, repoRoot, sharedCaches.skills));
         }
         case "list_skills": {
-          return createToolResult(await handleListSkills(repoRoot));
+          return createToolResult(await handleListSkills(repoRoot, sharedCaches.skills));
         }
         case "list_projects": {
           return createToolResult(await handleListProjects(config.memoryRoot));
@@ -523,8 +569,13 @@ async function runProvider(provider: QueryProvider, prompt: string, config: Runn
   }
 }
 
-async function runQuery(request: QueryRequest, config: RunnerConfig, deps: RunnerDependencies) {
-  const tools = await deps.mcpClient.listTools();
+async function runQuery(
+  request: QueryRequest,
+  config: RunnerConfig,
+  deps: RunnerDependencies,
+  listTools: () => Promise<MCPTool[]>,
+) {
+  const tools = await listTools();
   const hits = await deps.rag.query(request.query, config.topK);
   const resolveTool = findResolveTool(tools);
 
@@ -559,13 +610,18 @@ export function createRunnerApp(
   },
   env: Record<string, string | undefined> = Bun.env,
 ): RunnerApp {
+  const sharedCaches: RunnerSharedCaches = {
+    projectContext: new ProjectContextCache(),
+    skills: new SkillsCache(),
+  };
+  const listToolsCache = new TimedValueCache(() => deps.mcpClient.listTools(), TOOL_CACHE_TTL_MS);
   const mcpConfig: RunnerMcpConfig = {
     chromaUrl: env.CHROMA_URL ?? "http://127.0.0.1:8000",
     memoryRoot: resolveRunnerMemoryRoot(config.corpusDirs),
     memoryUrl: env.VPS_MEMORY_URL || undefined,
     prdDir: env.PRD_DIR ?? join(import.meta.dir, "../../..", "memory", "prd"),
   };
-  const mcpRuntime = createRunnerMcpRuntime(mcpConfig);
+  const mcpRuntime = createRunnerMcpRuntime(mcpConfig, sharedCaches);
   const createNamespaceRag = deps.createNamespaceRag ?? ((namespace: string) => new ChromaRagService({
     collectionName: namespace,
     url: env.CHROMA_URL ?? "http://127.0.0.1:8000",
@@ -580,10 +636,17 @@ export function createRunnerApp(
     toolCount: 0,
   };
 
+  function clearCaches(): void {
+    listToolsCache.clear();
+    sharedCaches.projectContext.clear();
+    sharedCaches.skills.clear();
+  }
+
   async function refresh(): Promise<void> {
+    clearCaches();
     const [syncResult, tools] = await Promise.all([
       deps.rag.syncDirectories(config.corpusDirs),
-      deps.mcpClient.listTools(),
+      listToolsCache.get(true),
     ]);
 
     state.indexedAt = syncResult.indexedAt;
@@ -635,6 +698,7 @@ export function createRunnerApp(
       if (url.pathname === "/refresh-namespace" && req.method === "POST") {
         try {
           const { namespace } = await readNamespaceRequest(req);
+          clearCaches();
           let memRoot: string;
           try {
             memRoot = resolveMemoryRoot(config.corpusDirs);
@@ -661,7 +725,7 @@ export function createRunnerApp(
       if (url.pathname === "/query" && req.method === "POST") {
         try {
           const request = await readQueryRequest(req);
-          const result = await runQuery(request, config, deps);
+          const result = await runQuery(request, config, deps, () => listToolsCache.get());
           return jsonResponse({
             indexedAt: state.indexedAt,
             query: request.query,

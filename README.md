@@ -1,12 +1,20 @@
 # Context7 Local Platform
 
-This repo now contains a small local platform around Context7:
+This repository is a local runner-first MCP platform for AI agents. It provides:
+
+- a local MCP endpoint for agents at `http://127.0.0.1:3200/mcp`
+- project context via `get_project_context`
+- skill discovery and whole-document skill loading
+- RAG-backed code and docs retrieval via ChromaDB
+- project memory through either in-process memory or the legacy durable stack
+
+Core components:
 
 - `context7-gateway`: HTTP wrapper around `@upstash/context7-mcp`
-- `runner`: internal Bun service that talks to MCP servers and Chroma
+- `runner`: Bun service that owns the agent-facing MCP tool surface
 - `packages/mcp-client`: reusable MCP client layer
 - `packages/rag`: Chroma-backed local retrieval over mounted corpora
-- `chroma`: vector database used by the runner
+- `chromadb`: vector database used by the runner
 
 The gateway keeps the same public MCP surface:
 
@@ -15,6 +23,22 @@ The gateway keeps the same public MCP surface:
 - `POST /message?sessionId=...`
 - `POST /mcp`
 - `DELETE /mcp`
+
+## AI Orientation
+
+If you are configuring an AI agent or MCP client for this repo, start here:
+
+- [CLAUDE.md](./CLAUDE.md): Claude-oriented repo instructions
+- [agent.md](./agent.md): generic AI-agent instructions
+- [docs/agent-system-prompt.md](./docs/agent-system-prompt.md): fuller system-prompt style protocol
+
+Key defaults for agents:
+
+- connect to `http://127.0.0.1:3200/mcp`
+- use namespace `mcp-context7-local`
+- load project context before code work
+- use `rag_search` before modifying existing code
+- use `./scripts/compose.sh legacy` if durable memory is required
 
 ## Quick Start
 
@@ -27,11 +51,23 @@ chmod +x scripts/compose.sh start-context7-mcp.sh
 ./scripts/compose.sh doctor
 ```
 
+The default Docker startup is the low-RAM runner-first stack: `context7-gateway`, `runner`, and `chromadb`.
+
+If you need durable memory or the older split services, start the legacy profile:
+
+```bash
+./scripts/compose.sh legacy
+```
+
 The gateway binds to `127.0.0.1:3100` by default. The runner and Chroma stay internal to the compose network.
 
 ## Runner-First Workflow
 
 The local runner is the default workflow for project-aware context and memory.
+
+In the default Docker stack, `memory_*` MCP tools use the runner's in-process memory store. This keeps RAM lower and avoids booting Postgres by default, but memory entries do not survive a runner container restart.
+
+If you need durable cross-restart memory, use `./scripts/compose.sh legacy`.
 
 Create a new project with:
 
@@ -102,9 +138,17 @@ If you set `GATEWAY_AUTH_TOKEN`, send `Authorization: Bearer <token>` to `/sse`,
 
 ## Services
 
+Default stack:
+
 - `context7-gateway`: public MCP entrypoint on `127.0.0.1:${GATEWAY_HOST_PORT:-3100}`
 - `runner`: internal service with `/health`, `/ready`, `/refresh`, and `/query`
-- `chroma`: internal vector database on port `8000`
+- `chromadb`: vector database used by the runner
+
+Legacy profile:
+
+- `postgres`: durable store for agent memory
+- `memory-service`: HTTP memory service backed by Postgres
+- `rag-service`: legacy Go RAG service
 
 Container builds are defined only in:
 
@@ -149,6 +193,7 @@ STDIO_CMD_JSON='["bun","test/fixtures/fake-stdio-mcp.ts"]' bun run services/cont
 - `MCP_CLOUDFLARE_URL`: optional remote MCP URL
 - `CF_API_TOKEN`: optional remote MCP bearer token
 - `CHROMA_URL`: runner-side Chroma base URL
+- `VPS_MEMORY_URL`: optional durable memory service URL; leave unset for the default low-RAM Docker mode
 - `RAG_COLLECTION`: Chroma collection name
 - `RAG_TOP_K`: runner retrieval depth
 - `CODEX_CMD_JSON`: optional JSON array override for the Codex CLI command, default `["codex"]`
@@ -201,6 +246,7 @@ The `memory/prd` files are read by `get_project_context`, and the skill registry
 - `bun run test:all`
 - `./scripts/compose.sh build`
 - `./scripts/compose.sh up`
+- `./scripts/compose.sh legacy`
 - `./scripts/compose.sh down`
 - `./scripts/compose.sh logs`
 - `./scripts/compose.sh health`

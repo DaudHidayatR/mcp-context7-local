@@ -251,6 +251,67 @@ describe("runner", () => {
 
     expect(codexPrompt).toBe(geminiPrompt);
   });
+
+  test("caches MCP tool discovery across repeated queries and refreshes on /refresh", async () => {
+    let listToolsCalls = 0;
+    const app = createRunnerApp({
+      codexCommand: [bunPath, fixturePath],
+      corpusDirs: ["/tmp/context"],
+      geminiCommand: [bunPath, fixturePath],
+      port: 3200,
+      topK: 5,
+    }, {
+      ...createDeps(),
+      mcpClient: {
+        ...createDeps().mcpClient,
+        call: async () => ({
+          content: [{ text: "{\"libraryName\":\"project\"}", type: "text" }],
+        }),
+        dispose: () => {},
+        listTools: async () => {
+          listToolsCalls += 1;
+          return [
+            {
+              description: "Resolve library IDs",
+              inputSchema: { type: "object" },
+              name: "ctx7_resolve-library-id",
+              originalName: "resolve-library-id",
+              server: "context7",
+            },
+          ];
+        },
+      },
+    });
+
+    try {
+      await app.refresh();
+      expect(listToolsCalls).toBe(1);
+
+      const first = await app.fetch(new Request(new URL("/query", baseUrl), {
+        body: JSON.stringify({ query: "what is this project" }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }));
+      const second = await app.fetch(new Request(new URL("/query", baseUrl), {
+        body: JSON.stringify({ query: "what is this project" }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }));
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(listToolsCalls).toBe(1);
+
+      const refreshed = await app.fetch(new Request(new URL("/refresh", baseUrl), {
+        method: "POST",
+      }));
+
+      expect(refreshed.status).toBe(200);
+      expect(listToolsCalls).toBe(2);
+    } finally {
+      app.dispose();
+    }
+  });
 });
 
 describe("runner mcp", () => {

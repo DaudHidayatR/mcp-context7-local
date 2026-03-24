@@ -10,7 +10,7 @@ COPY apps/runner/package.json apps/runner/package.json
 COPY packages/mcp-client/package.json packages/mcp-client/package.json
 COPY packages/rag/package.json packages/rag/package.json
 COPY services/context7-gateway/package.json services/context7-gateway/package.json
-RUN bun install --production
+RUN bun install --production --frozen-lockfile
 COPY apps/runner/src apps/runner/src
 COPY packages/mcp-client/src packages/mcp-client/src
 COPY packages/rag/src packages/rag/src
@@ -29,4 +29,4 @@ USER runner
 EXPOSE 3200
 HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3200/ready || exit 1
-CMD ["bun", "run", "apps/runner/src/index.ts"]
+CMD ["bun", "--smol", "run", "apps/runner/src/index.ts"]

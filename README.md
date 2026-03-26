@@ -4,7 +4,7 @@ This repository is a local runner-first MCP platform for AI agents. It provides:
 
 - a local MCP endpoint for agents at `http://127.0.0.1:3200/mcp`
 - project context via `get_project_context`
-- skill discovery and whole-document skill loading
+- automatic skill resolution and whole-document skill loading
 - RAG-backed code and docs retrieval via ChromaDB
 - project memory through either in-process memory or the legacy durable stack
 
@@ -103,7 +103,22 @@ HTTP MCP clients:
 This is the default agent-facing endpoint for the local Docker stack. The
 runner MCP contract is the project-aware tool surface used by agents:
 `rag_search`, `memory_read`, `memory_read_all`, `memory_write`,
-`get_project_context`, `list_projects`, `list_skills`, and `load_skill`.
+`get_project_context`, `list_projects`, `resolve_skill`, `list_skills`, and `load_skill`.
+
+For skill usage, prefer:
+
+```text
+resolve_skill(task="add a pre-tool hook that blocks dangerous shell commands")
+```
+
+Use `list_skills` and `load_skill` only for manual inspection or explicit lookup.
+
+Local project skills are stored under `.agents/skills`. Some are repo-tracked
+mirrors of official upstream Anthropic skills, and some remain custom local
+skills. Source classification is tracked in `skills-lock.json`, and the current
+inventory is documented in [docs/skill-sources.md](./docs/skill-sources.md).
+The runner still loads only local files; it does not run `bunx skills add` or
+sync remote Skills CLI packages at runtime.
 
 If you want the remote deployment instead, use the same server name with your
 Cloudflare Worker URL:
@@ -237,7 +252,7 @@ The runner-first project contract uses the filesystem as the source of truth:
 - `memory/skills/index.json` stores the runtime skill registry
 - `.agents/skills/*/SKILL.md` are the canonical whole-document skill sources referenced by the registry
 
-The `memory/prd` files are read by `get_project_context`, and the skill registry is read by `list_skills` and `load_skill`.
+The `memory/prd` files are read by `get_project_context`, and the skill registry is read by `resolve_skill`, `list_skills`, and `load_skill`.
 
 ## Scripts
 

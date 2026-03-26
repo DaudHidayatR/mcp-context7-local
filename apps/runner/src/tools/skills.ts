@@ -6,6 +6,11 @@ const loadSkillArgsSchema = z.object({
   skill_name: z.string().min(1),
 });
 
+const resolveSkillArgsSchema = z.object({
+  task: z.string().min(1),
+  top_k: z.number().int().min(1).max(5).optional().default(1),
+});
+
 export interface SkillSummary {
   description: string;
   name: string;
@@ -24,6 +29,23 @@ interface CachedRegistryEntry {
 interface CachedSkillContentEntry {
   content: string;
   mtimeMs: number;
+}
+
+interface SkillSearchDocument {
+  bodySnippet: string;
+  frontmatterDescription: string;
+  frontmatterName: string;
+  headings: string[];
+}
+
+interface ResolvedSkillCandidate extends SkillSummary {
+  matchedOn: string[];
+  score: number;
+}
+
+interface ResolvedSkillResult {
+  candidates: ResolvedSkillCandidate[];
+  selected: ResolvedSkillCandidate;
 }
 
 export class SkillsCache {
@@ -134,6 +156,142 @@ function parseFrontmatter(content: string): Record<string, string> {
   return values;
 }
 
+function stripFrontmatter(content: string): string {
+  const lines = content.split(/\r?\n/);
+  if (lines[0] !== "---") {
+    return content;
+  }
+
+  const endIndex = lines.indexOf("---", 1);
+  if (endIndex < 0) {
+    return content;
+  }
+
+  return lines.slice(endIndex + 1).join("\n");
+}
+
+function extractSearchText(content: string): SkillSearchDocument {
+  const frontmatter = parseFrontmatter(content);
+  const markdownBody = stripFrontmatter(content);
+  const headings = markdownBody
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const match = line.match(/^#{1,6}\s+(.+?)\s*$/);
+      return match ? [match[1]] : [];
+    });
+
+  return {
+    bodySnippet: markdownBody.slice(0, 8192),
+    frontmatterDescription: frontmatter.description ?? "",
+    frontmatterName: frontmatter.name ?? "",
+    headings,
+  };
+}
+
+function tokenize(value: string): string[] {
+  return normalizeSkillName(value)
+    .split("-")
+    .filter(Boolean);
+}
+
+function countTokenOverlap(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) {
+    return 0;
+  }
+
+  const rightSet = new Set(right);
+  let overlap = 0;
+  for (const token of left) {
+    if (rightSet.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap;
+}
+
+function containsPhrase(haystack: string, needle: string): boolean {
+  const normalizedHaystack = normalizeSkillName(haystack);
+  const normalizedNeedle = normalizeSkillName(needle);
+  return normalizedNeedle.length >= 3 && normalizedHaystack.includes(normalizedNeedle);
+}
+
+function scoreSkillMatch(
+  task: string,
+  skill: SkillFileEntry,
+  document?: SkillSearchDocument,
+): { matchedOn: string[]; score: number; tieBreakNameHeading: number; tieBreakDescription: number } {
+  const matchedOn = new Set<string>();
+  const taskTokens = tokenize(task);
+  const normalizedTask = normalizeSkillName(task);
+
+  let score = 0;
+  let tieBreakNameHeading = 0;
+  let tieBreakDescription = 0;
+
+  const registerMatch = (kind: string, amount: number, tieBucket?: "name-heading" | "description") => {
+    if (amount <= 0) return;
+    matchedOn.add(kind);
+    score += amount;
+    if (tieBucket === "name-heading") {
+      tieBreakNameHeading += amount;
+    }
+    if (tieBucket === "description") {
+      tieBreakDescription += amount;
+    }
+  };
+
+  if (normalizedTask.includes(skill.skillName)) {
+    registerMatch("name", 12, "name-heading");
+  }
+
+  const nameTokens = tokenize(skill.name);
+  const nameOverlap = countTokenOverlap(taskTokens, nameTokens);
+  registerMatch("name", nameOverlap * 4, "name-heading");
+
+  const descriptionTokens = tokenize(skill.description);
+  const descriptionOverlap = countTokenOverlap(taskTokens, descriptionTokens);
+  registerMatch("description", descriptionOverlap * 3, "description");
+
+  if (containsPhrase(task, skill.description)) {
+    registerMatch("description", 4, "description");
+  }
+
+  if (document) {
+    const frontmatterNameTokens = tokenize(document.frontmatterName);
+    const frontmatterNameOverlap = countTokenOverlap(taskTokens, frontmatterNameTokens);
+    registerMatch("name", frontmatterNameOverlap * 3, "name-heading");
+
+    const frontmatterDescriptionTokens = tokenize(document.frontmatterDescription);
+    const frontmatterDescriptionOverlap = countTokenOverlap(taskTokens, frontmatterDescriptionTokens);
+    registerMatch("description", frontmatterDescriptionOverlap * 2, "description");
+
+    const headingText = document.headings.join(" ");
+    const headingTokens = tokenize(headingText);
+    const headingOverlap = countTokenOverlap(taskTokens, headingTokens);
+    registerMatch("headings", headingOverlap * 3, "name-heading");
+
+    if (document.headings.some((heading) => containsPhrase(task, heading) || containsPhrase(heading, task))) {
+      registerMatch("headings", 4, "name-heading");
+    }
+
+    const bodyTokens = tokenize(document.bodySnippet);
+    const bodyOverlap = countTokenOverlap(taskTokens, bodyTokens);
+    registerMatch("body", bodyOverlap, undefined);
+
+    if (containsPhrase(document.bodySnippet, task)) {
+      registerMatch("body", 2, undefined);
+    }
+  }
+
+  return {
+    matchedOn: [...matchedOn],
+    score,
+    tieBreakDescription,
+    tieBreakNameHeading,
+  };
+}
+
 async function collectSkillsFromDirectory(skillsDir: string): Promise<SkillFileEntry[]> {
   try {
     const entries = await readdir(skillsDir, { withFileTypes: true });
@@ -205,6 +363,50 @@ function findSkill(skills: SkillFileEntry[], skillName: string): SkillFileEntry 
   return skills.find((skill) => skill.skillName === normalized);
 }
 
+async function findRelevantSkill(
+  skills: SkillFileEntry[],
+  task: string,
+  cache?: SkillsCache,
+  topK = 1,
+): Promise<ResolvedSkillResult | null> {
+  const candidates: Array<ResolvedSkillCandidate & {
+    tieBreakDescription: number;
+    tieBreakNameHeading: number;
+  }> = [];
+
+  for (const skill of skills) {
+    const content = cache ? await cache.loadSkillContent(skill.filePath) : await readFile(skill.filePath, "utf8");
+    const score = scoreSkillMatch(task, skill, extractSearchText(content));
+    if (score.score <= 0) {
+      continue;
+    }
+
+    candidates.push({
+      description: skill.description,
+      matchedOn: score.matchedOn,
+      name: skill.name,
+      score: score.score,
+      tieBreakDescription: score.tieBreakDescription,
+      tieBreakNameHeading: score.tieBreakNameHeading,
+    });
+  }
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  candidates.sort((left, right) =>
+    right.score - left.score
+    || right.tieBreakNameHeading - left.tieBreakNameHeading
+    || right.tieBreakDescription - left.tieBreakDescription
+    || left.name.localeCompare(right.name));
+
+  return {
+    candidates: candidates.slice(0, topK).map(({ tieBreakDescription, tieBreakNameHeading, ...candidate }) => candidate),
+    selected: (({ tieBreakDescription, tieBreakNameHeading, ...candidate }) => candidate)(candidates[0]),
+  };
+}
+
 export async function handleListSkills(repoRoot: string, cache?: SkillsCache): Promise<{ skills: SkillSummary[] }> {
   const skills = await collectSkills(repoRoot, cache);
   return {
@@ -235,6 +437,52 @@ export async function handleLoadSkill(
   return {
     content,
     loaded_at: new Date().toISOString(),
+    skill_name: skill.skillName,
+  };
+}
+
+export async function handleResolveSkill(
+  args: unknown,
+  repoRoot: string,
+  cache?: SkillsCache,
+): Promise<
+  | {
+    candidates: Array<{ description: string; name: string; score: number }>;
+    content: string;
+    loaded_at: string;
+    match: { matched_on: string[]; score: number };
+    skill_name: string;
+  }
+  | { available_skills: SkillSummary[]; error: string }
+> {
+  const { task, top_k } = resolveSkillArgsSchema.parse(args ?? {});
+  const skills = await collectSkills(repoRoot, cache);
+  const resolved = await findRelevantSkill(skills, task, cache, top_k);
+
+  if (!resolved) {
+    return {
+      available_skills: skills.map(({ description, name }) => ({ description, name })),
+      error: `No relevant skill found for task: ${task}`,
+    };
+  }
+
+  const skill = findSkill(skills, resolved.selected.name);
+  if (!skill) {
+    return {
+      available_skills: skills.map(({ description, name }) => ({ description, name })),
+      error: `Skill not found: ${resolved.selected.name}`,
+    };
+  }
+
+  const content = cache ? await cache.loadSkillContent(skill.filePath) : await readFile(skill.filePath, "utf8");
+  return {
+    candidates: resolved.candidates.map(({ description, name, score }) => ({ description, name, score })),
+    content,
+    loaded_at: new Date().toISOString(),
+    match: {
+      matched_on: resolved.selected.matchedOn,
+      score: resolved.selected.score,
+    },
     skill_name: skill.skillName,
   };
 }

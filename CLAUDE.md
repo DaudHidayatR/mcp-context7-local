@@ -77,13 +77,20 @@ questions, and a short summary.
 
 Use when you need to discover valid project namespaces under the memory root.
 
+### `resolve_skill`
+
+Use this as the default way to find and load the most relevant skill document
+for the current task.
+
 ### `list_skills`
 
-Use to discover procedural skills exposed by the runner.
+Use to inspect available procedural skills exposed by the runner when you need
+manual discovery.
 
 ### `load_skill`
 
-Use to load the full `SKILL.md` source for a relevant workflow.
+Use to load the full `SKILL.md` source for a relevant workflow when you already
+know the exact skill slug.
 
 ## Memory Mode
 
@@ -100,8 +107,14 @@ restarts. Use `legacy` mode if durable memory matters.
 
 - `memory/<namespace>/` contains namespace documents indexed into RAG
 - `memory/prd/<namespace>:prd:*.json` backs `get_project_context`
-- `memory/skills/index.json` backs `list_skills` and `load_skill`
+- `memory/skills/index.json` backs `resolve_skill`, `list_skills`, and `load_skill`
 - `.agents/skills/*/SKILL.md` are the canonical whole-document skill sources
+
+Local skills under `.agents/skills` are repo-tracked files. Some mirror
+official upstream Anthropic skills and some remain custom local skills. Source
+tracking lives in `skills-lock.json`, and the current inventory is documented
+in `docs/skill-sources.md`. The runner uses local files rather than
+auto-installing remote Skills CLI packages.
 
 ## More Detail
 

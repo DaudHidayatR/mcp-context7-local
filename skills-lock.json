@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-development": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "computedHash": "ae24ec9ffbb28bea825ab5879972e7bf2fd16c89041908f6eaa81f39ee1bf58c"
+    },
+    "algorithmic-art": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "e1ab25751224ca0c28d7b5059724a80ec729d31efd06ba4d147190761bcc400d"
+    },
+    "brand-guidelines": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "1818186099f87212b1daffe01f39bf05c9e091a93eac89a9f191f08143499607"
+    },
+    "canvas-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "78f5838c125f0ddb63cbbfa58ddc7697f3ef5257ed2153dcb43a7cbe6357253f"
+    },
+    "command-development": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "computedHash": "e245319cea53fdaaa90e7044e371c66eda88cef6aa764610b1aac6b3fbc1e987"
+    },
+    "doc-coauthoring": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "8067add0c50fedf35b916a5e2876eb06bdffab0c6739d5752323dd2a3ae97610"
+    },
+    "docx": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "a2a8cccfa8e17a284aeb2c008112c662f538dcc765000db4ddc05366fbba9449"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "computedHash": "093d94eb2b1321dc152422760feb61f7fe00bff87f01670f995ebe67a9dd6700"
+    },
+    "frontend-design": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "computedHash": "cb4437bd853b756d20b34fc6add9a67b4eb6016b47c42b60baa04556135b7ae1"
+    },
+    "hook-development": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "computedHash": "3b64865ed1b23233690a7f506441c8aa4281f8a098e12044f486680a172054d1"
+    },
+    "internal-comms": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "ac19d21ca8d9bebcc0889b62cef2af181bb0cc96c3d9f9c48757f9612ab87a9a"
+    },
+    "mcp-builder": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "ab0383d0d71c8e3b5c72f8d2ffb38f82c153325f8a5c8eca98e2c5b5907fa71a"
+    },
+    "mcp-integration": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "computedHash": "81b2c73206f13816e133d0bcafbb62dfa300615150a00c59efc495cd430705fe"
+    },
+    "pdf": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "8f5036f3440305ab38484379f2b6939fc58e9f3b893cba4cac956a280e15dd5c"
+    },
+    "plugin-settings": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "computedHash": "b72b29ec1ece7ee0f6f7cdf0273f070a4b6a7f954f615b81d452f3d7fa34daf7"
+    },
+    "plugin-structure": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "computedHash": "61ff9140e336d1f5f235763b57acc66265af02ddbdaf7d2f353b1aed6d7b4fb1"
+    },
+    "pptx": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "1da77ddc90f8d0d2c43e1a3d1313c84ae33d5f077bf284f10c1cb54c5e4fd657"
+    },
+    "prd-generator": {
+      "source": "local",
+      "sourceType": "custom",
+      "computedHash": "3c27088451b04485d9529e85b319d9b8b0a24cd797aa438695def35010d77f97"
+    },
+    "product-self-knowledge": {
+      "source": "local",
+      "sourceType": "custom",
+      "computedHash": "14a5408b5a6361c836f824cc7dfc39bce318d7e856aec56975f2f3aba329c6db"
+    },
+    "skill-audit": {
+      "source": "local",
+      "sourceType": "custom",
+      "computedHash": "ecbf423f0e935b31c8c6790de400d8bad6efaa43b4295a5ead161fe4c8ad4760"
+    },
+    "skill-creator": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "b806ec99a5e35379efd7c64a82dfa586069c4e3fca636d1db738406b05de24a5"
+    },
+    "skill-development": {
+      "source": "anthropics/claude-code",
+      "sourceType": "github",
+      "computedHash": "7f095a97da05950d978ad65aae853c2519b58298e44aa16f820faf971adaf007"
+    },
+    "slack-gif-creator": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "7286ece9e8dce42dfc4876d6e76f20e5a4433a4a26f31975603de0599b161dab"
+    },
+    "theme-factory": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "acf6120a9be8bb012b04d32fc94f4aa272dbd9f81cebad142810897dddab27ba"
+    },
+    "web-artifacts-builder": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "e6139075d2dfa3f86b33f0f009e37f3bbdb16099a7a39d13d09c81fa1583198e"
+    },
+    "writing-hookify-rules": {
+      "source": "local",
+      "sourceType": "custom",
+      "computedHash": "7a1cd9ab88095b790c7e4b4014041f77f768db6da3c24e258055cd511a5c0631"
+    },
+    "xlsx": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "7e671c5b9cdf0e3b73fce75384320cfcf0094a80f1a0ac9b5b1537d1109990f2"
+    }
+  }
+}

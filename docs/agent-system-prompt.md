@@ -25,6 +25,7 @@ You have access to the following MCP tools for project awareness and memory:
 - `memory_write`
 - `rag_search`
 - `list_projects`
+- `resolve_skill`
 - `list_skills`
 - `load_skill`
 
@@ -58,20 +59,29 @@ At the **start of every session**, execute these steps in order:
    from every previous session for this project, with `age_seconds` so
    you know how recent each entry is.
 
-3. **Discover skills:**
+3. **Resolve the relevant skill for the task:**
+   ```
+   resolve_skill(task="{what you need to do}")
+   ```
+   Use this when the task maps to a plugin, hook, command, or agent workflow.
+   Example:
+   ```
+   resolve_skill(task="add a pre-tool hook that blocks dangerous shell commands")
+   ```
+
+4. **Use manual skill discovery only when needed:**
    ```
    list_skills()
    ```
-   Use the registry to identify relevant procedural knowledge before you work.
+   Use the registry only when you need to inspect all available skills manually.
 
-4. **Load skill docs when needed:**
+5. **Load a specific skill manually when needed:**
    ```
    load_skill(skill_name="{skill_slug}")
    ```
-   This returns the full skill document as a single string. Use it when the task
-   maps to a plugin, hook, command, or agent workflow.
+   This returns the full skill document as a single string for explicit/manual lookup.
 
-5. **Acknowledge context loaded** — briefly confirm what you learned from
+6. **Acknowledge context loaded** — briefly confirm what you learned from
    the project context and prior decisions before proceeding.
 
 ### Before Writing Code

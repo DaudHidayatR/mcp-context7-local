@@ -13,7 +13,7 @@ import { basename, join } from "node:path";
 import { InMemoryStore, handleMemoryRead, handleMemoryReadAll, handleMemoryWrite } from "./tools/memory";
 import { handleGetProjectContext, handleListProjects, ProjectContextCache } from "./tools/project";
 import { handleRagSearch } from "./tools/rag";
-import { handleListSkills, handleLoadSkill, SkillsCache } from "./tools/skills";
+import { handleListSkills, handleLoadSkill, handleResolveSkill, SkillsCache } from "./tools/skills";
 
 export type QueryProvider = "codex" | "gemini";
 
@@ -314,6 +314,25 @@ const RUNNER_MCP_TOOLS = [
     name: "list_skills",
   },
   {
+    description: "Resolve and load the most relevant procedural skill for a natural-language task.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "Natural-language description of the current task or intent" },
+        top_k: {
+          type: "integer",
+          minimum: 1,
+          maximum: 5,
+          default: 1,
+          description: "Number of ranked candidates to include in the response",
+        },
+      },
+      required: ["task"],
+      additionalProperties: false,
+    },
+    name: "resolve_skill",
+  },
+  {
     description: "List project namespaces discovered under the memory root.",
     inputSchema: {
       type: "object",
@@ -407,6 +426,9 @@ function createRunnerMcpRuntime(config: RunnerMcpConfig, sharedCaches: RunnerSha
         }
         case "list_skills": {
           return createToolResult(await handleListSkills(repoRoot, sharedCaches.skills));
+        }
+        case "resolve_skill": {
+          return createToolResult(await handleResolveSkill(args, repoRoot, sharedCaches.skills));
         }
         case "list_projects": {
           return createToolResult(await handleListProjects(config.memoryRoot));

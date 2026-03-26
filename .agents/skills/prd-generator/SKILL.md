@@ -1,6 +1,6 @@
 ---
 name: prd-generator
-description: 'This skill should be used when the user asks to "generate a PRD", "create a PRD", "write a product requirements document", "fill in project requirements", "bootstrap project context", "define project goals", "document project architecture", "write SOPs", or "set up memory/prd files for a new project". Produces the five JSON files that `get_project_context` reads: meta, goals, architecture, constraints, and sops.'
+description: This skill should be used when the user asks to "generate a PRD", "create a PRD", "write a product requirements document", "fill in project requirements", "bootstrap project context", "define project goals", "document project architecture", "write SOPs", or "set up memory/prd files for a new project". Produces the five JSON files that `get_project_context` reads: meta, goals, architecture, constraints, and sops.
 version: 0.1.0
 ---
 

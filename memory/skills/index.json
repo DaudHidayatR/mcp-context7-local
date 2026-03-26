@@ -4,74 +4,164 @@
   "skills": [
     {
       "name": "agent-development",
-      "description": "Create and improve autonomous agents, including triggers, tools, prompts, and examples.",
+      "description": "This skill should be used when the user asks to \"create an agent\", \"add an agent\", \"write a subagent\", \"agent frontmatter\", \"when to use description\", \"agent examples\", \"agent tools\", \"agent colors\", \"autonomous agent\", or needs guidance on agent structure, system prompts, triggering conditions, or agent development best practices for Claude Code plugins.",
       "source_path": ".agents/skills/Agent Development/SKILL.md",
       "load_mode": "whole-document"
     },
     {
+      "name": "algorithmic-art",
+      "description": "Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Create original algorithmic art rather than copying existing artists' work to avoid copyright violations.",
+      "source_path": ".agents/skills/algorithmic-art/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "brand-guidelines",
+      "description": "Applies Anthropic's official brand colors and typography to any sort of artifact that may benefit from having Anthropic's look-and-feel. Use it when brand colors or style guidelines, visual formatting, or company design standards apply.",
+      "source_path": ".agents/skills/brand-guidelines/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "canvas-design",
+      "description": "Create beautiful visual art in .png and .pdf documents using design philosophy. You should use this skill when the user asks to create a poster, piece of art, design, or other static piece. Create original visual designs, never copying existing artists' work to avoid copyright violations.",
+      "source_path": ".agents/skills/canvas-design/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
       "name": "command-development",
-      "description": "Create and maintain slash commands with arguments, interactive prompts, and file references.",
+      "description": "This skill should be used when the user asks to \"create a slash command\", \"add a command\", \"write a custom command\", \"define command arguments\", \"use command frontmatter\", \"organize commands\", \"create command with file references\", \"interactive command\", \"use AskUserQuestion in command\", or needs guidance on slash command structure, YAML frontmatter fields, dynamic arguments, bash execution in commands, user interaction patterns, or command development best practices for Claude Code.",
       "source_path": ".agents/skills/Command Development/SKILL.md",
       "load_mode": "whole-document"
     },
     {
       "name": "doc-coauthoring",
-      "description": "Co-author proposals, specs, PRDs, RFCs, and decision docs with a structure-first process.",
+      "description": "Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks.",
       "source_path": ".agents/skills/doc-coauthoring/SKILL.md",
       "load_mode": "whole-document"
     },
     {
+      "name": "docx",
+      "description": "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files). Triggers include: any mention of 'Word doc', 'word document', '.docx', or requests to produce professional documents with formatting like tables of contents, headings, page numbers, or letterheads. Also use when extracting or reorganizing content from .docx files, inserting or replacing images in documents, performing find-and-replace in Word files, working with tracked changes or comments, or converting content into a polished Word document. If the user asks for a 'report', 'memo', 'letter', 'template', or similar deliverable as a Word or .docx file, use this skill. Do NOT use for PDFs, spreadsheets, Google Docs, or general coding tasks unrelated to document generation.",
+      "source_path": ".agents/skills/docx/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "find-skills",
+      "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+      "source_path": ".agents/skills/find-skills/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "frontend-design",
+      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.",
+      "source_path": ".agents/skills/frontend-design/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
       "name": "hook-development",
-      "description": "Create hooks for tool validation, prompt-based automation, and event-driven plugin behavior.",
+      "description": "This skill should be used when the user asks to \"create a hook\", \"add a PreToolUse/PostToolUse/Stop hook\", \"validate tool use\", \"implement prompt-based hooks\", \"use ${CLAUDE_PLUGIN_ROOT}\", \"set up event-driven automation\", \"block dangerous commands\", or mentions hook events (PreToolUse, PostToolUse, Stop, SubagentStop, SessionStart, SessionEnd, UserPromptSubmit, PreCompact, Notification). Provides comprehensive guidance for creating and implementing Claude Code plugin hooks with focus on advanced prompt-based hooks API.",
       "source_path": ".agents/skills/Hook Development/SKILL.md",
       "load_mode": "whole-document"
     },
     {
+      "name": "internal-comms",
+      "description": "A set of resources to help me write all kinds of internal communications, using the formats that my company likes to use. Claude should use this skill whenever asked to write some sort of internal communications (status reports, leadership updates, 3P updates, company newsletters, FAQs, incident reports, project updates, etc.).",
+      "source_path": ".agents/skills/internal-comms/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
       "name": "mcp-builder",
-      "description": "Design and implement MCP servers with clear tool contracts, pagination, and evaluation coverage.",
+      "description": "Guide for creating high-quality MCP (Model Context Protocol) servers that enable LLMs to interact with external services through well-designed tools. Use when building MCP servers to integrate external APIs or services, whether in Python (FastMCP) or Node/TypeScript (MCP SDK).",
       "source_path": ".agents/skills/mcp-builder/SKILL.md",
       "load_mode": "whole-document"
     },
     {
       "name": "mcp-integration",
-      "description": "Integrate MCP servers into plugins and configure stdio, SSE, HTTP, or WebSocket transports.",
+      "description": "This skill should be used when the user asks to \"add MCP server\", \"integrate MCP\", \"configure MCP in plugin\", \"use .mcp.json\", \"set up Model Context Protocol\", \"connect external service\", mentions \"${CLAUDE_PLUGIN_ROOT} with MCP\", or discusses MCP server types (SSE, stdio, HTTP, WebSocket). Provides comprehensive guidance for integrating Model Context Protocol servers into Claude Code plugins for external tool and service integration.",
       "source_path": ".agents/skills/MCP Integration/SKILL.md",
       "load_mode": "whole-document"
     },
     {
+      "name": "pdf",
+      "description": "Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file or asks to produce one, use this skill.",
+      "source_path": ".agents/skills/pdf/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
       "name": "plugin-settings",
-      "description": "Store and manage plugin-specific configuration and local state in markdown or YAML-backed files.",
+      "description": "This skill should be used when the user asks about \"plugin settings\", \"store plugin configuration\", \"user-configurable plugin\", \".local.md files\", \"plugin state files\", \"read YAML frontmatter\", \"per-project plugin settings\", or wants to make plugin behavior configurable. Documents the .claude/plugin-name.local.md pattern for storing plugin-specific configuration with YAML frontmatter and markdown content.",
       "source_path": ".agents/skills/Plugin Settings/SKILL.md",
       "load_mode": "whole-document"
     },
     {
       "name": "plugin-structure",
-      "description": "Understand plugin directory layout, manifests, and component organization.",
+      "description": "This skill should be used when the user asks to \"create a plugin\", \"scaffold a plugin\", \"understand plugin structure\", \"organize plugin components\", \"set up plugin.json\", \"use ${CLAUDE_PLUGIN_ROOT}\", \"add commands/agents/skills/hooks\", \"configure auto-discovery\", or needs guidance on plugin directory layout, manifest configuration, component organization, file naming conventions, or Claude Code plugin architecture best practices.",
       "source_path": ".agents/skills/Plugin Structure/SKILL.md",
       "load_mode": "whole-document"
     },
     {
+      "name": "pptx",
+      "description": "Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates, layouts, speaker notes, or comments. Trigger whenever the user mentions \\\"deck,\\\" \\\"slides,\\\" \\\"presentation,\\\" or references a .pptx filename, regardless of what they plan to do with the content afterward. If a .pptx file needs to be opened, created, or touched, use this skill.",
+      "source_path": ".agents/skills/pptx/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
       "name": "prd-generator",
-      "description": "Generate the five memory/prd JSON files (meta, goals, architecture, constraints, sops) that back get_project_context. Use when bootstrapping a new project namespace or filling in project requirements.",
+      "description": "This skill should be used when the user asks to \"generate a PRD\", \"create a PRD\", \"write a product requirements document\", \"fill in project requirements\", \"bootstrap project context\", \"define project goals\", \"document project architecture\", \"write SOPs\", or \"set up memory/prd files for a new project\". Produces the five JSON files that `get_project_context` reads: meta, goals, architecture, constraints, and sops.",
       "source_path": ".agents/skills/prd-generator/SKILL.md",
       "load_mode": "whole-document"
     },
     {
       "name": "product-self-knowledge",
-      "description": "Route Claude and OpenAI product questions to the correct official source.",
+      "description": "Route Anthropic product facts to the right official source before answering. Use when discussing Claude, Claude Code, the API, or Claude.ai behavior.",
       "source_path": ".agents/skills/product-self-knowledge/SKILL.md",
       "load_mode": "whole-document"
     },
     {
+      "name": "skill-audit",
+      "description": "Audit skill files for portability across AI agents and platforms. Use when classifying skills into general portable, vendor-specific portable, or platform/runtime specific tiers.",
+      "source_path": ".agents/skills/skill-audit/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "skill-creator",
+      "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+      "source_path": ".agents/skills/skill-creator/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
       "name": "skill-development",
-      "description": "Create and refine skills with progressive disclosure, evaluations, and clear triggers.",
+      "description": "This skill should be used when the user wants to \"create a skill\", \"add a skill to plugin\", \"write a new skill\", \"improve skill description\", \"organize skill content\", or needs guidance on skill structure, progressive disclosure, or skill development best practices for Claude Code plugins.",
       "source_path": ".agents/skills/Skill Development/SKILL.md",
       "load_mode": "whole-document"
     },
     {
+      "name": "slack-gif-creator",
+      "description": "Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like \"make me a GIF of X doing Y for Slack.",
+      "source_path": ".agents/skills/slack-gif-creator/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "theme-factory",
+      "description": "Toolkit for styling artifacts with a theme. These artifacts can be slides, docs, reportings, HTML landing pages, etc. There are 10 pre-set themes with colors/fonts that you can apply to any artifact that has been creating, or can generate a new theme on-the-fly.",
+      "source_path": ".agents/skills/theme-factory/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "web-artifacts-builder",
+      "description": "Suite of tools for creating elaborate, multi-component claude.ai HTML artifacts using modern frontend web technologies (React, Tailwind CSS, shadcn/ui). Use for complex artifacts requiring state management, routing, or shadcn/ui components - not for simple single-file HTML/JSX artifacts.",
+      "source_path": ".agents/skills/web-artifacts-builder/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
       "name": "writing-hookify-rules",
-      "description": "Write hookify rules for prompt-based automation and tool policy enforcement.",
+      "description": "This skill should be used when the user asks to \"create a hookify rule\", \"write a hook rule\", \"configure hookify\", \"add a hookify rule\", or needs guidance on hookify rule syntax and patterns.",
       "source_path": ".agents/skills/Writing Hookify Rules/SKILL.md",
+      "load_mode": "whole-document"
+    },
+    {
+      "name": "xlsx",
+      "description": "Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new spreadsheet from scratch or from other data sources; or convert between tabular file formats. Trigger especially when the user references a spreadsheet file by name or path — even casually (like \\\"the xlsx in my downloads\\\") — and wants something done to it or produced from it. Also trigger for cleaning or restructuring messy tabular data files (malformed rows, misplaced headers, junk data) into proper spreadsheets. The deliverable must be a spreadsheet file. Do NOT trigger when the primary deliverable is a Word document, HTML report, standalone Python script, database pipeline, or Google Sheets API integration, even if tabular data is involved.",
+      "source_path": ".agents/skills/xlsx/SKILL.md",
       "load_mode": "whole-document"
     }
   ]

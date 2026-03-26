@@ -10,7 +10,7 @@ The project is designed to give an AI agent:
 - project context from filesystem-backed PRD files
 - RAG search over local docs and code-adjacent corpus files
 - project memory
-- skill discovery and whole-document skill loading
+- skill discovery and whole-document skill loading from local skills.sh-compatible `SKILL.md` files
 
 ## Canonical Namespace
 
@@ -48,6 +48,7 @@ rag_search(query="{what you are about to change}", namespace="mcp-context7-local
 - `memory_write`
 - `get_project_context`
 - `list_projects`
+- `resolve_skill`
 - `list_skills`
 - `load_skill`
 
@@ -57,7 +58,8 @@ rag_search(query="{what you are about to change}", namespace="mcp-context7-local
 - `rag_search`: inspect current patterns before modifying files
 - `memory_read` and `memory_read_all`: review prior decisions and session data
 - `memory_write`: persist decisions and summaries before ending work
-- `list_skills` and `load_skill`: discover and load procedural knowledge from the runtime skill registry
+- `resolve_skill`: find and load the most relevant procedural skill for the current task
+- `list_skills` and `load_skill`: manual fallback for discovering and loading procedural knowledge from the runtime skill registry
 
 ## Endpoint Guidance
 
@@ -85,6 +87,12 @@ memory.
 - `memory/prd/<namespace>:prd:*.json`: project context source
 - `memory/skills/index.json`: skill registry
 - `.agents/skills/*/SKILL.md`: canonical skill documents
+
+Local skills in `.agents/skills` are repo-tracked files. Some mirror official
+upstream Anthropic skills and some remain custom local skills. Source tracking
+lives in `skills-lock.json`, and the current inventory is documented in
+`docs/skill-sources.md`. The runner does not auto-install remote Skills CLI
+packages at runtime.
 
 ## Reference
 

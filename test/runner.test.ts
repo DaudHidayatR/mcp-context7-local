@@ -377,7 +377,7 @@ describe("runner mcp", () => {
     );
   }
 
-  test("POST /mcp tools/list returns rag_search and memory_write", async () => {
+  test("POST /mcp tools/list returns runner tools including resolve_skill", async () => {
     const app = createMcpApp();
 
     try {
@@ -414,8 +414,9 @@ describe("runner mcp", () => {
       expect(toolNames).toContain("get_project_context");
       expect(toolNames).toContain("load_skill");
       expect(toolNames).toContain("list_skills");
+      expect(toolNames).toContain("resolve_skill");
       expect(toolNames).toContain("list_projects");
-      expect(toolNames).toHaveLength(8);
+      expect(toolNames).toHaveLength(9);
     } finally {
       app.dispose();
     }
@@ -471,6 +472,92 @@ describe("runner mcp", () => {
       expect(payload.result.content[0].text).toContain("\"results\"");
     } finally {
       ChromaRagService.prototype.query = originalQuery;
+      app.dispose();
+    }
+  });
+
+  test("POST /mcp tools/call resolves a skill and returns content", async () => {
+    const app = createMcpApp();
+
+    try {
+      const sessionId = await initializeMcpSession(app);
+      const response = await app.fetch(
+        new Request(new URL("/mcp", baseUrl), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+            "Mcp-Session-Id": sessionId,
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 4,
+            method: "tools/call",
+            params: {
+              name: "resolve_skill",
+              arguments: {
+                task: "create a hookify rule and explain hookify rule syntax patterns",
+                top_k: 2,
+              },
+            },
+          }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const payload = await response.json();
+      const result = JSON.parse(payload.result.content[0].text);
+
+      expect(result).toMatchObject({
+        skill_name: "writing-hookify-rules",
+        match: {
+          matched_on: expect.arrayContaining(["name", "description"]),
+        },
+      });
+      expect(result.content).toContain("hookify");
+      expect(result.candidates).toEqual([
+        expect.objectContaining({ name: "writing-hookify-rules" }),
+        expect.any(Object),
+      ]);
+    } finally {
+      app.dispose();
+    }
+  });
+
+  test("POST /mcp tools/call returns a structured miss for unknown skill tasks", async () => {
+    const app = createMcpApp();
+
+    try {
+      const sessionId = await initializeMcpSession(app);
+      const response = await app.fetch(
+        new Request(new URL("/mcp", baseUrl), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+            "Mcp-Session-Id": sessionId,
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 5,
+            method: "tools/call",
+            params: {
+              name: "resolve_skill",
+              arguments: {
+                task: "quuxblorb flarbnor snazzleproto",
+              },
+            },
+          }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const payload = await response.json();
+      const result = JSON.parse(payload.result.content[0].text);
+
+      expect(result.error).toBe("No relevant skill found for task: quuxblorb flarbnor snazzleproto");
+      expect(result.available_skills.length).toBeGreaterThan(0);
+    } finally {
       app.dispose();
     }
   });
